@@ -1,4 +1,4 @@
-package com.example.dacs31.ui.screen
+package com.example.dacs31.ui.screen.componentsUI
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -167,8 +166,9 @@ fun BottomNavigationBar(navController: NavController, modifier: Modifier = Modif
         modifier = modifier
             .fillMaxWidth()
             .height(90.dp)
-            .background(Color.Transparent)
-            .shadow(8.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .background(Color.White)
+//            .navigationBarsPadding() // 👉 Dòng quan trọng nhất!
     ) {
         Row(
             modifier = Modifier

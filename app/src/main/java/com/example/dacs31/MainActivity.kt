@@ -4,12 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.dacs31.ui.screen.CustomerHomeScreen
-import com.example.dacs31.ui.screen.DriverHomeScreen
+import com.example.dacs31.ui.screen.customer.CustomerHomeScreen
+import com.example.dacs31.ui.screen.driver.DriverHomeScreen
 import com.example.dacs31.ui.screen.ProfileScreen
 import com.example.dacs31.ui.screen.SignInScreen
 import com.example.dacs31.ui.screen.SignUpScreen

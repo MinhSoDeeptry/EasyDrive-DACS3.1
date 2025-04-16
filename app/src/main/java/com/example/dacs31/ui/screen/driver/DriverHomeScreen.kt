@@ -1,35 +1,28 @@
-package com.example.dacs31.ui.screen
+package com.example.dacs31.ui.screen.driver
 
 import android.Manifest
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.example.dacs31.R
+import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
+import com.example.dacs31.ui.screen.componentsUI.TopControlBar
 import com.example.dacs31.utils.getBitmapFromVectorDrawable
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 import com.mapbox.geojson.Point
@@ -44,19 +37,39 @@ import com.mapbox.maps.plugin.locationcomponent.location
 import com.mapbox.maps.plugin.locationcomponent.createDefault2DPuck
 
 @Composable
-fun CustomerHomeScreen(navController: NavController) {
+fun DriverHomeScreen(navController: NavController) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var pointAnnotationManager by remember { mutableStateOf<PointAnnotationManager?>(null) }
     var userLocation by remember { mutableStateOf<Point?>(null) }
+    var isConnected by remember { mutableStateOf(false) }
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
 
-    // Kiểm tra kết nối Firebase
+    // Firebase Realtime Database
+    val database = Firebase.database
+    val connectedRef = database.getReference("driver_status/connected")
+
+    // Kiểm tra kết nối Firebase và đồng bộ trạng thái isConnected
     LaunchedEffect(Unit) {
-        val database = Firebase.database
-        val myRef = database.getReference("test_message")
-        myRef.setValue("Hello, Firebase!")
+        // Lắng nghe thay đổi từ Firebase
+        connectedRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val value = snapshot.getValue(Boolean::class.java)
+                if (value != null) {
+                    isConnected = value
+                    Log.d("Firebase", "Trạng thái isConnected cập nhật từ Firebase: $value")
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("Firebase", "Lỗi khi đọc dữ liệu: ${error.message}")
+            }
+        })
+
+        // Kiểm tra kết nối Firebase bằng cách ghi dữ liệu thử nghiệm
+        val testRef = database.getReference("test_message")
+        testRef.setValue("Hello, Firebase!")
             .addOnSuccessListener {
                 Log.d("FirebaseTest", "Ghi dữ liệu thành công!")
             }
@@ -172,143 +185,27 @@ fun CustomerHomeScreen(navController: NavController) {
         )
 
         // Thanh điều khiển phía dưới
-        BottomControlBar(
-            navController = navController,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-        )
-
-        // Các nút ở giữa, đặt sát gần BottomControlBar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 100.dp), // Khoảng cách từ BottomControlBar
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .align(Alignment.BottomCenter),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Nút "Rental" (cta_primary)
-            Button(
-                onClick = { /* TODO: Xử lý khi nhấn Rental */ },
-                modifier = Modifier
-                    .width(172.dp)
-                    .height(54.dp)
-                    .padding(start = 15.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFEDAE10) // Màu vàng từ cta_primary
-                ),
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Text(
-                    text = "Rental",
-                    color = Color.Black,
-                    style = TextStyle(
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        lineHeight = 23.sp
-                    )
-                )
-            }
-
-            // Ô tìm kiếm (search với rectangle_3)
-            Box(
-                modifier = Modifier
-                    .width(336.dp)
-                    .height(48.dp)
-                    .padding(horizontal = 28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFFFFBE7)) // Màu nền từ rectangle_3
-                    .border(
-                        BorderStroke(2.dp, Color(0xFFF3BD06)), // Viền từ rectangle_3
-                        RoundedCornerShape(8.dp)
-                    )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    BasicTextField(
-                        value = "Where would you go?",
-                        onValueChange = { /* Không cho phép nhập */ },
-                        modifier = Modifier
-                            .weight(1f),
-                        enabled = false,
-                        textStyle = TextStyle(
-                            color = Color.Gray,
-                            fontSize = 16.sp,
-                            lineHeight = 23.sp
-                        ),
-                        singleLine = true
-                    )
-                    Icon(
-                        imageVector = Icons.Default.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        tint = Color.Gray
-                    )
+            BottomControlBar(
+                navController = navController,
+                showConnectButton = true, // Hiển thị nút Connect/Disconnect
+                isConnected = isConnected,
+                onConnectClick = {
+                    isConnected = !isConnected
+                    connectedRef.setValue(isConnected)
+                        .addOnSuccessListener {
+                            Log.d("Firebase", "Cập nhật trạng thái isConnected thành công: $isConnected")
+                        }
+                        .addOnFailureListener { e ->
+                            Log.e("Firebase", "Cập nhật trạng thái thất bại: ${e.message}")
+                        }
                 }
-            }
-
-            // Nút "Transport" và "Delivery"
-            Row(
-                modifier = Modifier
-                    .width(336.dp)
-                    .padding(horizontal = 28.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Nút Transport (màu vàng)
-                Button(
-                    onClick = { /* TODO: Xử lý khi nhấn Transport */ },
-                    modifier = Modifier
-                        .width(168.dp)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFEDAE10) // Màu vàng từ rectangle_3
-                    ),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = "Transport",
-                        color = Color.White, // Màu text từ transport
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 23.sp
-                        )
-                    )
-                }
-
-                // Nút Delivery (màu nền trắng, viền vàng)
-                Button(
-                    onClick = { /* TODO: Xử lý khi nhấn Delivery */ },
-                    modifier = Modifier
-                        .width(168.dp)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(
-                            BorderStroke(2.dp, Color(0xFFF3BD06)), // Viền từ rectangle_3
-                            RoundedCornerShape(8.dp)
-                        ),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFFFBE7) // Màu nền từ rectangle_3
-                    ),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = "Delivery",
-                        color = Color(0xFF414141), // Màu text từ delivery
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 23.sp
-                        )
-                    )
-                }
-            }
+            )
         }
     }
 }
