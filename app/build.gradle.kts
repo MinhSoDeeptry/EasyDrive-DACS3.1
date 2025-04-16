@@ -41,8 +41,17 @@ android {
 }
 
 dependencies {
-    implementation("androidx.compose.material:material-icons-extended:1.5.4")
+    // Mapbox Maps SDK
     implementation("com.mapbox.maps:android:11.4.0")
+
+    // OkHttp để gọi API
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Kotlin Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // Jetpack Compose
+    implementation("androidx.compose.material:material-icons-extended:1.5.4")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -53,13 +62,19 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.runtime.android)
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.espresso.core)
-    implementation(libs.androidx.animation.core.lint)
+
+    // Firebase
     implementation(libs.firebase.auth)
+    implementation(libs.firebase.database.ktx)
+
+    // Google Sign-In
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
-    implementation(libs.firebase.database.ktx)
+
+    // Testing
+    implementation(libs.androidx.espresso.core)
+    implementation(libs.androidx.animation.core.lint)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

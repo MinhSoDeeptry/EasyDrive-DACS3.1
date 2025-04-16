@@ -32,9 +32,13 @@ import com.example.dacs31.R
 import com.example.dacs31.ui.screen.componentsUI.TopControlBar
 import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
 import com.example.dacs31.ui.screen.location.SelectAddressDialog
+import com.example.dacs31.ui.screen.location.getRoute
 import com.example.dacs31.utils.getBitmapFromVectorDrawable
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
+import com.mapbox.geojson.Feature
+import com.mapbox.geojson.FeatureCollection
+import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
@@ -45,6 +49,12 @@ import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
 import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
 import com.mapbox.maps.plugin.locationcomponent.location
 import com.mapbox.maps.plugin.locationcomponent.createDefault2DPuck
+import com.mapbox.maps.extension.style.layers.addLayer
+import com.mapbox.maps.extension.style.layers.generated.lineLayer
+import com.mapbox.maps.extension.style.sources.addSource
+import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
+import com.mapbox.maps.extension.style.sources.getSourceAs
+import kotlinx.coroutines.launch
 
 @Composable
 fun CustomerHomeScreen(navController: NavController) {
@@ -56,8 +66,17 @@ fun CustomerHomeScreen(navController: NavController) {
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
     var showSelectAddressDialog by remember { mutableStateOf(false) }
 
+    // Trạng thái để lưu tuyến đường
+    var routePoints by remember { mutableStateOf<List<Point>>(emptyList()) }
+
     // Trạng thái để theo dõi chế độ được chọn: "Transport" hoặc "Delivery"
     var selectedMode by remember { mutableStateOf("Transport") }
+
+    // Mapbox Access Token
+    val mapboxAccessToken = context.getString(R.string.mapbox_access_token)
+
+    // Coroutine scope để gọi API
+    val coroutineScope = rememberCoroutineScope()
 
     // Kiểm tra kết nối Firebase
     LaunchedEffect(Unit) {
@@ -103,7 +122,20 @@ fun CustomerHomeScreen(navController: NavController) {
     if (showSelectAddressDialog) {
         SelectAddressDialog(
             onDismiss = { showSelectAddressDialog = false },
-            userLocation = userLocation // Truyền vị trí hiện tại
+            onConfirm = { fromPoint, toPoint ->
+                if (fromPoint != null && toPoint != null) {
+                    coroutineScope.launch {
+                        try {
+                            routePoints = getRoute(fromPoint, toPoint, mapboxAccessToken)
+                        } catch (e: Exception) {
+                            Log.e("MapboxDirections", "Error fetching route: ${e.message}")
+                            routePoints = emptyList()
+                        }
+                    }
+                }
+            },
+            userLocation = userLocation,
+            mapboxAccessToken = mapboxAccessToken
         )
     }
 
@@ -145,9 +177,23 @@ fun CustomerHomeScreen(navController: NavController) {
                                 pulsingEnabled = true
                             }
 
-                            // Khởi tạo PointAnnotationManager ngay sau khi style tải
+                            // Khởi tạo PointAnnotationManager
                             val annotationApi = annotations
                             pointAnnotationManager = annotationApi.createPointAnnotationManager()
+
+                            // Thêm source và layer để vẽ tuyến đường
+                            style.addSource(
+                                geoJsonSource("route-source") {
+                                    featureCollection(FeatureCollection.fromFeatures(emptyList()))
+                                }
+                            )
+
+                            style.addLayer(
+                                lineLayer("route-layer", "route-source") {
+                                    lineColor("#FF0000") // Màu đỏ cho tuyến đường
+                                    lineWidth(5.0)
+                                }
+                            )
 
                             // Lắng nghe vị trí người dùng
                             location.addOnIndicatorPositionChangedListener { point ->
@@ -173,6 +219,19 @@ fun CustomerHomeScreen(navController: NavController) {
                         }
                     }
                     mapView = this
+                }
+            },
+            update = { mapView ->
+                // Cập nhật tuyến đường trên bản đồ
+                mapView.getMapboxMap().getStyle { style ->
+                    val source = style.getSourceAs<com.mapbox.maps.extension.style.sources.generated.GeoJsonSource>("route-source")
+                    if (routePoints.isNotEmpty()) {
+                        val lineString = LineString.fromLngLats(routePoints)
+                        val feature = Feature.fromGeometry(lineString)
+                        source?.featureCollection(FeatureCollection.fromFeature(feature))
+                    } else {
+                        source?.featureCollection(FeatureCollection.fromFeatures(emptyList()))
+                    }
                 }
             },
             modifier = Modifier.fillMaxSize()
