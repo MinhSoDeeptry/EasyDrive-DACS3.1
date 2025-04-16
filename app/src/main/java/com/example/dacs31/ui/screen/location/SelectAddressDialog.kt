@@ -1,5 +1,6 @@
 package com.example.dacs31.ui.screen.location
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -27,9 +28,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun SelectAddressDialog(
     onDismiss: () -> Unit,
-    onConfirm: (Point?, Point?) -> Unit, // Callback để trả về tọa độ From và To
-    userLocation: Point?, // Vị trí hiện tại từ Mapbox
-    mapboxAccessToken: String, // Mapbox Access Token
+    onConfirm: (Point?, Point?) -> Unit,
+    userLocation: Point?,
+    mapboxAccessToken: String,
     modifier: Modifier = Modifier
 ) {
     // Dữ liệu mẫu cho danh sách "Recent Places" (có thể bỏ nếu chỉ dùng API)
@@ -45,7 +46,7 @@ fun SelectAddressDialog(
     var toText by remember { mutableStateOf("") }
 
     // Trạng thái để lưu tọa độ của địa điểm được chọn
-    var fromPoint by remember { mutableStateOf(userLocation) } // Mặc định là vị trí hiện tại
+    var fromPoint by remember { mutableStateOf(userLocation) }
     var toPoint by remember { mutableStateOf<Point?>(null) }
 
     // Trạng thái cho danh sách đề xuất
@@ -65,7 +66,6 @@ fun SelectAddressDialog(
                     fromSuggestions = searchPlaces(query, mapboxAccessToken)
                     showFromSuggestions = fromSuggestions.isNotEmpty()
                 } catch (e: Exception) {
-                    // Xử lý lỗi (có thể hiển thị thông báo lỗi)
                     showFromSuggestions = false
                 }
             }
@@ -82,7 +82,6 @@ fun SelectAddressDialog(
                     toSuggestions = searchPlaces(query, mapboxAccessToken)
                     showToSuggestions = toSuggestions.isNotEmpty()
                 } catch (e: Exception) {
-                    // Xử lý lỗi (có thể hiển thị thông báo lỗi)
                     showToSuggestions = false
                 }
             }
@@ -94,13 +93,13 @@ fun SelectAddressDialog(
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
-            usePlatformDefaultWidth = false // Cho phép tùy chỉnh chiều rộng
+            usePlatformDefaultWidth = false
         )
     ) {
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .fillMaxHeight() // Tràn toàn bộ chiều cao màn hình
+                .fillMaxHeight()
                 .background(Color.White, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -135,7 +134,7 @@ fun SelectAddressDialog(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f) // Chiếm toàn bộ không gian còn lại, trừ nút Confirm
+                    .weight(1f)
             ) {
                 // Ô nhập "From"
                 item {
@@ -143,7 +142,7 @@ fun SelectAddressDialog(
                         value = fromText,
                         onValueChange = {
                             fromText = it
-                            searchFrom(it) // Tìm kiếm địa điểm khi nhập
+                            searchFrom(it)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -184,6 +183,7 @@ fun SelectAddressDialog(
                                     fromText = place.address
                                     fromPoint = place.coordinates
                                     showFromSuggestions = false
+                                    Log.d("SelectAddressDialog", "Selected From: ${place.address}, Coordinates: $fromPoint")
                                 }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -225,7 +225,7 @@ fun SelectAddressDialog(
                         value = toText,
                         onValueChange = {
                             toText = it
-                            searchTo(it) // Tìm kiếm địa điểm khi nhập
+                            searchTo(it)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -266,6 +266,7 @@ fun SelectAddressDialog(
                                     toText = place.address
                                     toPoint = place.coordinates
                                     showToSuggestions = false
+                                    Log.d("SelectAddressDialog", "Selected To: ${place.address}, Coordinates: $toPoint")
                                 }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -368,8 +369,8 @@ fun SelectAddressDialog(
             // Nút Confirm
             Button(
                 onClick = {
-                    onConfirm(fromPoint, toPoint) // Trả về tọa độ From và To
-                    onDismiss() // Đóng dialog
+                    onConfirm(fromPoint, toPoint)
+                    onDismiss()
                 },
                 modifier = Modifier
                     .width(336.dp)
@@ -377,7 +378,7 @@ fun SelectAddressDialog(
                     .padding(top = 16.dp)
                     .clip(RoundedCornerShape(8.dp)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFEDAE10) // Màu vàng giống nút Rental
+                    containerColor = Color(0xFFEDAE10)
                 ),
                 contentPadding = PaddingValues(0.dp)
             ) {

@@ -44,6 +44,9 @@ dependencies {
     // Mapbox Maps SDK
     implementation("com.mapbox.maps:android:11.4.0")
 
+    // Thêm Mapbox Turf để sử dụng TurfMeasurement
+    implementation("com.mapbox.mapboxsdk:mapbox-sdk-turf:6.8.0")
+
     // OkHttp để gọi API
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 

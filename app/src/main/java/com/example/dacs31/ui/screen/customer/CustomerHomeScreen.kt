@@ -9,9 +9,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,6 +56,7 @@ import com.mapbox.maps.extension.style.layers.generated.lineLayer
 import com.mapbox.maps.extension.style.sources.addSource
 import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
 import com.mapbox.maps.extension.style.sources.getSourceAs
+import com.mapbox.turf.TurfMeasurement
 import kotlinx.coroutines.launch
 
 @Composable
@@ -66,8 +69,10 @@ fun CustomerHomeScreen(navController: NavController) {
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
     var showSelectAddressDialog by remember { mutableStateOf(false) }
 
-    // Trạng thái để lưu tuyến đường
+    // Trạng thái để lưu tuyến đường và điểm From/To
     var routePoints by remember { mutableStateOf<List<Point>>(emptyList()) }
+    var fromPoint by remember { mutableStateOf<Point?>(null) }
+    var toPoint by remember { mutableStateOf<Point?>(null) }
 
     // Trạng thái để theo dõi chế độ được chọn: "Transport" hoặc "Delivery"
     var selectedMode by remember { mutableStateOf("Transport") }
@@ -122,16 +127,22 @@ fun CustomerHomeScreen(navController: NavController) {
     if (showSelectAddressDialog) {
         SelectAddressDialog(
             onDismiss = { showSelectAddressDialog = false },
-            onConfirm = { fromPoint, toPoint ->
-                if (fromPoint != null && toPoint != null) {
+            onConfirm = { from, to ->
+                Log.d("CustomerHomeScreen", "Confirm clicked: from=$from, to=$to")
+                if (from != null && to != null) {
+                    fromPoint = from
+                    toPoint = to
                     coroutineScope.launch {
                         try {
-                            routePoints = getRoute(fromPoint, toPoint, mapboxAccessToken)
+                            routePoints = getRoute(from, to, mapboxAccessToken)
+                            Log.d("CustomerHomeScreen", "Route points received: $routePoints")
                         } catch (e: Exception) {
                             Log.e("MapboxDirections", "Error fetching route: ${e.message}")
                             routePoints = emptyList()
                         }
                     }
+                } else {
+                    Log.w("CustomerHomeScreen", "From or To point is null")
                 }
             },
             userLocation = userLocation,
@@ -166,9 +177,14 @@ fun CustomerHomeScreen(navController: NavController) {
                     val mapboxMap = getMapboxMap()
                     mapboxMap.loadStyleUri(Style.MAPBOX_STREETS) { style ->
                         try {
-                            val bitmap = ctx.getBitmapFromVectorDrawable(R.drawable.baseline_location_on_24)
-                            val imageId = "user-location-marker"
-                            style.addImage(imageId, bitmap)
+                            // Thêm icon cho marker
+                            val userBitmap = ctx.getBitmapFromVectorDrawable(R.drawable.baseline_location_on_24)
+                            val startBitmap = ctx.getBitmapFromVectorDrawable(R.drawable.baseline_flag_24)
+                            val endBitmap = ctx.getBitmapFromVectorDrawable(R.drawable.baseline_destination_24)
+
+                            style.addImage("user-location-marker", userBitmap)
+                            style.addImage("start-marker", startBitmap)
+                            style.addImage("end-marker", endBitmap)
 
                             // Cấu hình hiển thị vị trí người dùng
                             location.updateSettings {
@@ -195,24 +211,10 @@ fun CustomerHomeScreen(navController: NavController) {
                                 }
                             )
 
-                            // Lắng nghe vị trí người dùng
+                            // Lắng nghe vị trí người dùng (chỉ lưu userLocation, không tự động di chuyển camera)
                             location.addOnIndicatorPositionChangedListener { point ->
                                 userLocation = point
-
-                                // Di chuyển camera đến vị trí người dùng
-                                mapboxMap.setCamera(
-                                    CameraOptions.Builder()
-                                        .center(point)
-                                        .zoom(15.0)
-                                        .build()
-                                )
-
-                                // Cập nhật marker
-                                pointAnnotationManager?.deleteAll()
-                                val pointAnnotationOptions = PointAnnotationOptions()
-                                    .withPoint(point)
-                                    .withIconImage(imageId)
-                                pointAnnotationManager?.create(pointAnnotationOptions)
+                                Log.d("CustomerHomeScreen", "User location updated: $userLocation")
                             }
                         } catch (e: Exception) {
                             Log.e("Mapbox", "Lỗi khi tải style hoặc thêm marker: ${e.message}")
@@ -222,6 +224,7 @@ fun CustomerHomeScreen(navController: NavController) {
                 }
             },
             update = { mapView ->
+                Log.d("CustomerHomeScreen", "Updating map with routePoints: $routePoints")
                 // Cập nhật tuyến đường trên bản đồ
                 mapView.getMapboxMap().getStyle { style ->
                     val source = style.getSourceAs<com.mapbox.maps.extension.style.sources.generated.GeoJsonSource>("route-source")
@@ -229,8 +232,37 @@ fun CustomerHomeScreen(navController: NavController) {
                         val lineString = LineString.fromLngLats(routePoints)
                         val feature = Feature.fromGeometry(lineString)
                         source?.featureCollection(FeatureCollection.fromFeature(feature))
+                        Log.d("CustomerHomeScreen", "Route drawn on map")
+
+                        // Thêm marker cho điểm From và To
+                        pointAnnotationManager?.deleteAll() // Xóa các marker cũ
+                        fromPoint?.let { from ->
+                            val startMarker = PointAnnotationOptions()
+                                .withPoint(from)
+                                .withIconImage("start-marker")
+                            pointAnnotationManager?.create(startMarker)
+                        }
+                        toPoint?.let { to ->
+                            val endMarker = PointAnnotationOptions()
+                                .withPoint(to)
+                                .withIconImage("end-marker")
+                            pointAnnotationManager?.create(endMarker)
+                        }
+
+                        // Điều chỉnh camera để hiển thị toàn bộ tuyến đường
+                        if (fromPoint != null && toPoint != null) {
+                            val bounds = TurfMeasurement.bbox(LineString.fromLngLats(routePoints))
+                            mapView.getMapboxMap().setCamera(
+                                CameraOptions.Builder()
+                                    .center(Point.fromLngLat((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2))
+                                    .zoom(12.0)
+                                    .build()
+                            )
+                            Log.d("CustomerHomeScreen", "Camera adjusted to show route")
+                        }
                     } else {
                         source?.featureCollection(FeatureCollection.fromFeatures(emptyList()))
+                        Log.w("CustomerHomeScreen", "No route points to draw")
                     }
                 }
             },
@@ -253,16 +285,50 @@ fun CustomerHomeScreen(navController: NavController) {
                 .align(Alignment.BottomCenter)
         )
 
+        // Nút "My Location" ở góc phải dưới
+        FloatingActionButton(
+            onClick = {
+                userLocation?.let { point ->
+                    mapView?.getMapboxMap()?.setCamera(
+                        CameraOptions.Builder()
+                            .center(point)
+                            .zoom(15.0)
+                            .build()
+                    )
+                    pointAnnotationManager?.deleteAll()
+                    val pointAnnotationOptions = PointAnnotationOptions()
+                        .withPoint(point)
+                        .withIconImage("user-location-marker")
+                    pointAnnotationManager?.create(pointAnnotationOptions)
+                    Log.d("CustomerHomeScreen", "Moved camera to user location: $point")
+                } ?: run {
+                    Log.w("CustomerHomeScreen", "User location is null")
+                    showPermissionDeniedDialog = true
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            shape = CircleShape,
+            containerColor = Color.White,
+            contentColor = Color.Black
+        ) {
+            Icon(
+                imageVector = Icons.Default.MyLocation,
+                contentDescription = "My Location"
+            )
+        }
+
         // Các nút ở giữa, đặt sát gần BottomControlBar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 100.dp), // Khoảng cách từ BottomControlBar
+                .padding(bottom = 100.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Nút "Rental" (cta_primary)
+            // Nút "Rental"
             Button(
                 onClick = { /* TODO: Xử lý khi nhấn Rental */ },
                 modifier = Modifier
@@ -271,7 +337,7 @@ fun CustomerHomeScreen(navController: NavController) {
                     .padding(start = 15.dp)
                     .clip(RoundedCornerShape(8.dp)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFEDAE10) // Màu vàng từ cta_primary
+                    containerColor = Color(0xFFEDAE10)
                 ),
                 contentPadding = PaddingValues(0.dp)
             ) {
@@ -286,19 +352,19 @@ fun CustomerHomeScreen(navController: NavController) {
                 )
             }
 
-            // Ô tìm kiếm (search với rectangle_3)
+            // Ô tìm kiếm
             Box(
                 modifier = Modifier
                     .width(336.dp)
                     .height(48.dp)
                     .padding(horizontal = 28.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFFFFBE7)) // Màu nền từ rectangle_3
+                    .background(Color(0xFFFFFBE7))
                     .border(
-                        BorderStroke(2.dp, Color(0xFFF3BD06)), // Viền từ rectangle_3
+                        BorderStroke(2.dp, Color(0xFFF3BD06)),
                         RoundedCornerShape(8.dp)
                     )
-                    .clickable { showSelectAddressDialog = true } // Mở dialog khi nhấn
+                    .clickable { showSelectAddressDialog = true }
             ) {
                 Row(
                     modifier = Modifier
@@ -331,9 +397,9 @@ fun CustomerHomeScreen(navController: NavController) {
                     .height(48.dp)
                     .padding(horizontal = 28.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFFFFBE7)) // Màu nền mặc định
+                    .background(Color(0xFFFFFBE7))
                     .border(
-                        BorderStroke(2.dp, Color(0xFFF3BD06)), // Viền bao quanh toàn bộ Row
+                        BorderStroke(2.dp, Color(0xFFF3BD06)),
                         RoundedCornerShape(8.dp)
                     )
             ) {

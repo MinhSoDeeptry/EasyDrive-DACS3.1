@@ -1,5 +1,6 @@
 package com.example.dacs31.ui.screen.location
 
+import android.util.Log
 import com.mapbox.geojson.Point
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,7 +43,7 @@ fun suggestPlaces(query: String, places: List<Place>): List<Place> {
 // Gọi Mapbox Geocoding API để tìm kiếm địa điểm thực tế qua HTTP
 suspend fun searchPlaces(query: String, accessToken: String): List<Place> = suspendCancellableCoroutine { continuation ->
     val client = OkHttpClient()
-    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=$accessToken"
+    val url = "https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=$accessToken&country=VN&types=address&language=vi"
 
     val request = Request.Builder()
         .url(url)
@@ -50,23 +51,29 @@ suspend fun searchPlaces(query: String, accessToken: String): List<Place> = susp
 
     client.newCall(request).enqueue(object : okhttp3.Callback {
         override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+            Log.e("MapboxGeocoding", "Error fetching geocoding data: ${e.message}")
             continuation.resumeWithException(e)
         }
 
         override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
             response.body?.string()?.let { jsonString ->
+                Log.d("MapboxGeocoding", "Geocoding response: $jsonString")
                 val json = JSONObject(jsonString)
                 val features = json.getJSONArray("features")
                 val places = mutableListOf<Place>()
                 for (i in 0 until features.length()) {
                     val feature = features.getJSONObject(i)
-                    val name = feature.getString("place_name")
-                    val address = feature.getString("place_name")
+                    val placeName = feature.getString("place_name")
+                    val address = if (feature.has("properties") && feature.getJSONObject("properties").has("address")) {
+                        feature.getJSONObject("properties").getString("address")
+                    } else {
+                        placeName
+                    }
                     val coordinatesJson = feature.getJSONObject("geometry").getJSONArray("coordinates")
                     val lng = coordinatesJson.getDouble(0)
                     val lat = coordinatesJson.getDouble(1)
                     val coordinates = Point.fromLngLat(lng, lat)
-                    places.add(Place(name, address, coordinates = coordinates))
+                    places.add(Place(placeName, address, coordinates = coordinates))
                 }
                 continuation.resume(places)
             } ?: continuation.resume(emptyList())
@@ -79,17 +86,21 @@ suspend fun getRoute(from: Point, to: Point, accessToken: String): List<Point> =
     val client = OkHttpClient()
     val url = "https://api.mapbox.com/directions/v5/mapbox/driving/${from.longitude()},${from.latitude()};${to.longitude()},${to.latitude()}?geometries=geojson&access_token=$accessToken"
 
+    Log.d("MapboxDirections", "Requesting route with URL: $url")
+
     val request = Request.Builder()
         .url(url)
         .build()
 
     client.newCall(request).enqueue(object : okhttp3.Callback {
         override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+            Log.e("MapboxDirections", "Error fetching route: ${e.message}")
             continuation.resumeWithException(e)
         }
 
         override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
             response.body?.string()?.let { jsonString ->
+                Log.d("MapboxDirections", "Directions response: $jsonString")
                 val json = JSONObject(jsonString)
                 val routes = json.getJSONArray("routes")
                 if (routes.length() > 0) {
@@ -103,11 +114,16 @@ suspend fun getRoute(from: Point, to: Point, accessToken: String): List<Point> =
                         val lat = coord.getDouble(1)
                         points.add(Point.fromLngLat(lng, lat))
                     }
+                    Log.d("MapboxDirections", "Route points: $points")
                     continuation.resume(points)
                 } else {
+                    Log.w("MapboxDirections", "No routes found in response")
                     continuation.resume(emptyList())
                 }
-            } ?: continuation.resume(emptyList())
+            } ?: run {
+                Log.w("MapboxDirections", "Empty response body")
+                continuation.resume(emptyList())
+            }
         }
     })
 }
