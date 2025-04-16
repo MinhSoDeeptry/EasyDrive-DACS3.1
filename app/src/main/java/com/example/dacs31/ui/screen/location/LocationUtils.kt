@@ -81,8 +81,8 @@ suspend fun searchPlaces(query: String, accessToken: String): List<Place> = susp
     })
 }
 
-// Gọi Mapbox Directions API để lấy tuyến đường
-suspend fun getRoute(from: Point, to: Point, accessToken: String): List<Point> = suspendCancellableCoroutine { continuation ->
+// Gọi Mapbox Directions API để lấy tuyến đường và khoảng cách
+suspend fun getRoute(from: Point, to: Point, accessToken: String): Pair<List<Point>, Double> = suspendCancellableCoroutine { continuation ->
     val client = OkHttpClient()
     val url = "https://api.mapbox.com/directions/v5/mapbox/driving/${from.longitude()},${from.latitude()};${to.longitude()},${to.latitude()}?geometries=geojson&access_token=$accessToken"
 
@@ -105,6 +105,7 @@ suspend fun getRoute(from: Point, to: Point, accessToken: String): List<Point> =
                 val routes = json.getJSONArray("routes")
                 if (routes.length() > 0) {
                     val route = routes.getJSONObject(0)
+                    val distance = route.getDouble("distance") // Khoảng cách (mét)
                     val geometry = route.getJSONObject("geometry")
                     val coordinates = geometry.getJSONArray("coordinates")
                     val points = mutableListOf<Point>()
@@ -114,15 +115,15 @@ suspend fun getRoute(from: Point, to: Point, accessToken: String): List<Point> =
                         val lat = coord.getDouble(1)
                         points.add(Point.fromLngLat(lng, lat))
                     }
-                    Log.d("MapboxDirections", "Route points: $points")
-                    continuation.resume(points)
+                    Log.d("MapboxDirections", "Route points: $points, Distance: $distance m")
+                    continuation.resume(Pair(points, distance))
                 } else {
                     Log.w("MapboxDirections", "No routes found in response")
-                    continuation.resume(emptyList())
+                    continuation.resume(Pair(emptyList(), 0.0))
                 }
             } ?: run {
                 Log.w("MapboxDirections", "Empty response body")
-                continuation.resume(emptyList())
+                continuation.resume(Pair(emptyList(), 0.0))
             }
         }
     })

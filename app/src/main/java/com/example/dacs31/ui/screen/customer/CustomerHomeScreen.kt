@@ -33,8 +33,11 @@ import androidx.navigation.NavController
 import com.example.dacs31.R
 import com.example.dacs31.ui.screen.componentsUI.TopControlBar
 import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
+import com.example.dacs31.ui.screen.location.RouteInfoDialog
 import com.example.dacs31.ui.screen.location.SelectAddressDialog
 import com.example.dacs31.ui.screen.location.getRoute
+import com.example.dacs31.ui.screen.payment.PaymentScreen
+import com.example.dacs31.ui.screen.transport.SelectTransportScreen
 import com.example.dacs31.utils.getBitmapFromVectorDrawable
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
@@ -68,11 +71,18 @@ fun CustomerHomeScreen(navController: NavController) {
     var userLocation by remember { mutableStateOf<Point?>(null) }
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
     var showSelectAddressDialog by remember { mutableStateOf(false) }
+    var showRouteInfoDialog by remember { mutableStateOf(false) }
+    var showSelectTransportDialog by remember { mutableStateOf(false) }
+    var showPaymentScreen by remember { mutableStateOf(false) }
 
-    // Trạng thái để lưu tuyến đường và điểm From/To
+    // Trạng thái để lưu tuyến đường, điểm From/To, khoảng cách, và địa chỉ
     var routePoints by remember { mutableStateOf<List<Point>>(emptyList()) }
     var fromPoint by remember { mutableStateOf<Point?>(null) }
     var toPoint by remember { mutableStateOf<Point?>(null) }
+    var routeDistance by remember { mutableStateOf(0.0) }
+    var fromAddress by remember { mutableStateOf("Current location") }
+    var toAddress by remember { mutableStateOf("") }
+    var selectedTransport by remember { mutableStateOf<String?>(null) }
 
     // Trạng thái để theo dõi chế độ được chọn: "Transport" hoặc "Delivery"
     var selectedMode by remember { mutableStateOf("Transport") }
@@ -82,6 +92,10 @@ fun CustomerHomeScreen(navController: NavController) {
 
     // Coroutine scope để gọi API
     val coroutineScope = rememberCoroutineScope()
+
+    // Biến để theo dõi thời gian cập nhật vị trí cuối cùng
+    var lastLocationUpdateTime by remember { mutableStateOf(0L) }
+    val minUpdateInterval = 30_000L // 30 giây
 
     // Kiểm tra kết nối Firebase
     LaunchedEffect(Unit) {
@@ -127,18 +141,25 @@ fun CustomerHomeScreen(navController: NavController) {
     if (showSelectAddressDialog) {
         SelectAddressDialog(
             onDismiss = { showSelectAddressDialog = false },
-            onConfirm = { from, to ->
-                Log.d("CustomerHomeScreen", "Confirm clicked: from=$from, to=$to")
+            onConfirm = { from, fromAddr, to, toAddr ->
+                Log.d("CustomerHomeScreen", "Confirm clicked: from=$from, fromAddr=$fromAddr, to=$to, toAddr=$toAddr")
                 if (from != null && to != null) {
                     fromPoint = from
                     toPoint = to
+                    fromAddress = fromAddr
+                    toAddress = toAddr
                     coroutineScope.launch {
                         try {
-                            routePoints = getRoute(from, to, mapboxAccessToken)
-                            Log.d("CustomerHomeScreen", "Route points received: $routePoints")
+                            val (points, distance) = getRoute(from, to, mapboxAccessToken)
+                            routePoints = points
+                            routeDistance = distance
+                            Log.d("CustomerHomeScreen", "Route points received: $routePoints, Distance: $routeDistance m")
+                            // Hiển thị thông tin tuyến đường
+                            showRouteInfoDialog = true
                         } catch (e: Exception) {
                             Log.e("MapboxDirections", "Error fetching route: ${e.message}")
                             routePoints = emptyList()
+                            routeDistance = 0.0
                         }
                     }
                 } else {
@@ -147,6 +168,40 @@ fun CustomerHomeScreen(navController: NavController) {
             },
             userLocation = userLocation,
             mapboxAccessToken = mapboxAccessToken
+        )
+    }
+
+    // Hiển thị dialog "Select Transport"
+    if (showSelectTransportDialog) {
+        Log.d("CustomerHomeScreen", "Showing SelectTransportScreen")
+        SelectTransportScreen(
+            onDismiss = {
+                showSelectTransportDialog = false
+                Log.d("CustomerHomeScreen", "SelectTransportScreen dismissed")
+            },
+            onTransportSelected = { transport ->
+                selectedTransport = transport
+                showSelectTransportDialog = false
+                showPaymentScreen = true // Chuyển sang PaymentScreen
+                Log.d("CustomerHomeScreen", "Transport selected: $transport")
+            }
+        )
+    }
+
+    // Hiển thị PaymentScreen
+    if (showPaymentScreen) {
+        PaymentScreen(
+            selectedTransport = selectedTransport ?: "Car",
+            routeDistance = routeDistance,
+            onDismiss = {
+                showPaymentScreen = false
+                Log.d("CustomerHomeScreen", "PaymentScreen dismissed")
+            },
+            onConfirmRide = {
+                showPaymentScreen = false
+                Log.d("CustomerHomeScreen", "Ride confirmed with transport: $selectedTransport")
+                // TODO: Xử lý logic xác nhận chuyến đi
+            }
         )
     }
 
@@ -308,7 +363,7 @@ fun CustomerHomeScreen(navController: NavController) {
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(16.dp),
+                .padding(bottom = if (showRouteInfoDialog) 150.dp else 16.dp, end = 16.dp),
             shape = CircleShape,
             containerColor = Color.White,
             contentColor = Color.Black
@@ -319,132 +374,152 @@ fun CustomerHomeScreen(navController: NavController) {
             )
         }
 
-        // Các nút ở giữa, đặt sát gần BottomControlBar
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 100.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Nút "Rental"
-            Button(
-                onClick = { /* TODO: Xử lý khi nhấn Rental */ },
+        // Hiển thị RouteInfoDialog sát dưới màn hình
+        if (showRouteInfoDialog) {
+            RouteInfoDialog(
+                fromAddress = fromAddress,
+                toAddress = toAddress,
+                distance = routeDistance,
+                onDismiss = {
+                    showRouteInfoDialog = false
+                    showSelectTransportDialog = true // Hiển thị SelectTransportScreen sau khi nhấn Confirm
+                    Log.d("CustomerHomeScreen", "RouteInfoDialog dismissed, opening SelectTransportScreen")
+                },
                 modifier = Modifier
-                    .width(172.dp)
-                    .height(54.dp)
-                    .padding(start = 15.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFEDAE10)
-                ),
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Text(
-                    text = "Rental",
-                    color = Color.Black,
-                    style = TextStyle(
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        lineHeight = 23.sp
-                    )
-                )
-            }
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                    .align(Alignment.BottomCenter)
+            )
+        }
 
-            // Ô tìm kiếm
-            Box(
+        // Các nút ở giữa, đặt sát gần BottomControlBar
+        if (!showRouteInfoDialog) {
+            Column(
                 modifier = Modifier
-                    .width(336.dp)
-                    .height(48.dp)
-                    .padding(horizontal = 28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFFFFBE7))
-                    .border(
-                        BorderStroke(2.dp, Color(0xFFF3BD06)),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .clickable { showSelectAddressDialog = true }
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 100.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Nút "Rental"
+                Button(
+                    onClick = { /* TODO: Xử lý khi nhấn Rental */ },
+                    modifier = Modifier
+                        .width(172.dp)
+                        .height(54.dp)
+                        .padding(start = 15.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEDAE10)
+                    ),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text(
+                        text = "Rental",
+                        color = Color.Black,
+                        style = TextStyle(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            lineHeight = 23.sp
+                        )
+                    )
+                }
+
+                // Ô tìm kiếm
+                Box(
+                    modifier = Modifier
+                        .width(336.dp)
+                        .height(48.dp)
+                        .padding(horizontal = 28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFFFFBE7))
+                        .border(
+                            BorderStroke(2.dp, Color(0xFFF3BD06)),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { showSelectAddressDialog = true }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Where would you go?",
+                            color = Color.Gray,
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                lineHeight = 23.sp
+                            )
+                        )
+                        Icon(
+                            imageVector = Icons.Default.FavoriteBorder,
+                            contentDescription = "Favorite",
+                            tint = Color.Gray
+                        )
+                    }
+                }
+
+                // Tab/Switch cho "Transport" và "Delivery"
                 Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Where would you go?",
-                        color = Color.Gray,
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 23.sp
+                        .width(336.dp)
+                        .height(48.dp)
+                        .padding(horizontal = 28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFFFFBE7))
+                        .border(
+                            BorderStroke(2.dp, Color(0xFFF3BD06)),
+                            RoundedCornerShape(8.dp)
                         )
-                    )
-                    Icon(
-                        imageVector = Icons.Default.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        tint = Color.Gray
-                    )
-                }
-            }
+                ) {
+                    // Tab "Transport"
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(
+                                if (selectedMode == "Transport") Color(0xFFEDAE10) else Color(0xFFFFFBE7)
+                            )
+                            .clickable { selectedMode = "Transport" },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Transport",
+                            color = if (selectedMode == "Transport") Color.White else Color(0xFF414141),
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                lineHeight = 23.sp
+                            )
+                        )
+                    }
 
-            // Tab/Switch cho "Transport" và "Delivery"
-            Row(
-                modifier = Modifier
-                    .width(336.dp)
-                    .height(48.dp)
-                    .padding(horizontal = 28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFFFFBE7))
-                    .border(
-                        BorderStroke(2.dp, Color(0xFFF3BD06)),
-                        RoundedCornerShape(8.dp)
-                    )
-            ) {
-                // Tab "Transport"
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .background(
-                            if (selectedMode == "Transport") Color(0xFFEDAE10) else Color(0xFFFFFBE7)
+                    // Tab "Delivery"
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(
+                                if (selectedMode == "Delivery") Color(0xFFEDAE10) else Color(0xFFFFFBE7)
+                            )
+                            .clickable { selectedMode = "Delivery" },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Delivery",
+                            color = if (selectedMode == "Delivery") Color.White else Color(0xFF414141),
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                lineHeight = 23.sp
+                            )
                         )
-                        .clickable { selectedMode = "Transport" },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Transport",
-                        color = if (selectedMode == "Transport") Color.White else Color(0xFF414141),
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 23.sp
-                        )
-                    )
-                }
-
-                // Tab "Delivery"
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .background(
-                            if (selectedMode == "Delivery") Color(0xFFEDAE10) else Color(0xFFFFFBE7)
-                        )
-                        .clickable { selectedMode = "Delivery" },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Delivery",
-                        color = if (selectedMode == "Delivery") Color.White else Color(0xFF414141),
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 23.sp
-                        )
-                    )
+                    }
                 }
             }
         }

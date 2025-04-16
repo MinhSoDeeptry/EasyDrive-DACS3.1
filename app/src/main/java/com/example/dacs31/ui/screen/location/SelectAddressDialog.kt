@@ -28,12 +28,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun SelectAddressDialog(
     onDismiss: () -> Unit,
-    onConfirm: (Point?, Point?) -> Unit,
+    onConfirm: (Point?, String, Point?, String) -> Unit,
     userLocation: Point?,
     mapboxAccessToken: String,
     modifier: Modifier = Modifier
 ) {
-    // Dữ liệu mẫu cho danh sách "Recent Places" (có thể bỏ nếu chỉ dùng API)
+    // Dữ liệu mẫu cho danh sách "Recent Places"
     val recentPlaces = listOf(
         RecentPlace("Office", "2972 Westheimer Rd. Santa Ana, Illinois 85486", "2.7km"),
         RecentPlace("Coffee shop", "1901 Thornridge Cir. Shiloh, Hawaii 81063", "1.1km"),
@@ -42,37 +42,21 @@ fun SelectAddressDialog(
     ).map { it.toPlace() }
 
     // Trạng thái cho ô nhập "From" và "To"
-    var fromText by remember { mutableStateOf(pointToAddress(userLocation)) }
+    var fromText by remember { mutableStateOf("Current location") }
     var toText by remember { mutableStateOf("") }
 
-    // Trạng thái để lưu tọa độ của địa điểm được chọn
+    // Trạng thái để lưu tọa độ và địa chỉ của địa điểm được chọn
     var fromPoint by remember { mutableStateOf(userLocation) }
     var toPoint by remember { mutableStateOf<Point?>(null) }
+    var fromAddress by remember { mutableStateOf("Current location") }
+    var toAddress by remember { mutableStateOf("") }
 
     // Trạng thái cho danh sách đề xuất
-    var fromSuggestions by remember { mutableStateOf<List<Place>>(emptyList()) }
     var toSuggestions by remember { mutableStateOf<List<Place>>(emptyList()) }
-    var showFromSuggestions by remember { mutableStateOf(false) }
     var showToSuggestions by remember { mutableStateOf(false) }
 
     // Coroutine scope để gọi API
     val coroutineScope = rememberCoroutineScope()
-
-    // Hàm tìm kiếm địa điểm cho ô "From"
-    fun searchFrom(query: String) {
-        if (query.isNotBlank()) {
-            coroutineScope.launch {
-                try {
-                    fromSuggestions = searchPlaces(query, mapboxAccessToken)
-                    showFromSuggestions = fromSuggestions.isNotEmpty()
-                } catch (e: Exception) {
-                    showFromSuggestions = false
-                }
-            }
-        } else {
-            showFromSuggestions = false
-        }
-    }
 
     // Hàm tìm kiếm địa điểm cho ô "To"
     fun searchTo(query: String) {
@@ -99,7 +83,7 @@ fun SelectAddressDialog(
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .fillMaxHeight()
+                .wrapContentHeight()
                 .background(Color.White, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -136,85 +120,40 @@ fun SelectAddressDialog(
                     .fillMaxWidth()
                     .weight(1f)
             ) {
-                // Ô nhập "From"
+                // Ô nhập "From" (Current location, không cho phép chỉnh sửa)
                 item {
-                    OutlinedTextField(
-                        value = fromText,
-                        onValueChange = {
-                            fromText = it
-                            searchFrom(it)
-                        },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 8.dp),
-                        placeholder = { Text("From", color = Color.Gray) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.LocationOn,
-                                contentDescription = "Location",
-                                tint = Color.Gray
-                            )
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                }
-
-                // Danh sách đề xuất cho "From"
-                if (showFromSuggestions && fromSuggestions.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Suggestions for From",
-                            style = TextStyle(
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = "Location",
+                            tint = Color.Red,
+                            modifier = Modifier.size(24.dp)
                         )
-                    }
-                    items(fromSuggestions) { place ->
-                        Row(
+                        Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    fromText = place.address
-                                    fromPoint = place.coordinates
-                                    showFromSuggestions = false
-                                    Log.d("SelectAddressDialog", "Selected From: ${place.address}, Coordinates: $fromPoint")
-                                }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .weight(1f)
+                                .padding(start = 8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.LocationOn,
-                                contentDescription = "Location",
-                                tint = Color.Gray,
-                                modifier = Modifier.size(24.dp)
+                            Text(
+                                text = "Current location",
+                                style = TextStyle(
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
                             )
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 8.dp)
-                            ) {
-                                Text(
-                                    text = place.name,
-                                    style = TextStyle(
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Black
-                                    )
+                            Text(
+                                text = fromText,
+                                style = TextStyle(
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
                                 )
-                                Text(
-                                    text = place.address,
-                                    style = TextStyle(
-                                        fontSize = 12.sp,
-                                        color = Color.Gray
-                                    )
-                                )
-                            }
+                            )
                         }
                     }
                 }
@@ -235,7 +174,8 @@ fun SelectAddressDialog(
                             Icon(
                                 imageVector = Icons.Default.LocationOn,
                                 contentDescription = "Location",
-                                tint = Color.Gray
+                                tint = Color.Yellow,
+                                modifier = Modifier.size(24.dp)
                             )
                         },
                         singleLine = true,
@@ -265,6 +205,7 @@ fun SelectAddressDialog(
                                 .clickable {
                                     toText = place.address
                                     toPoint = place.coordinates
+                                    toAddress = place.address
                                     showToSuggestions = false
                                     Log.d("SelectAddressDialog", "Selected To: ${place.address}, Coordinates: $toPoint")
                                 }
@@ -274,7 +215,7 @@ fun SelectAddressDialog(
                             Icon(
                                 imageVector = Icons.Default.LocationOn,
                                 contentDescription = "Location",
-                                tint = Color.Gray,
+                                tint = Color.Yellow,
                                 modifier = Modifier.size(24.dp)
                             )
                             Column(
@@ -283,7 +224,7 @@ fun SelectAddressDialog(
                                     .padding(start = 8.dp)
                             ) {
                                 Text(
-                                    text = place.name,
+                                    text = "Destination",
                                     style = TextStyle(
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
@@ -322,13 +263,30 @@ fun SelectAddressDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable {
+                                toText = place.address
+                                toAddress = place.address
+                                // Gọi Mapbox Geocoding API để lấy tọa độ từ địa chỉ
+                                coroutineScope.launch {
+                                    try {
+                                        val places = searchPlaces(place.address, mapboxAccessToken)
+                                        if (places.isNotEmpty()) {
+                                            toPoint = places[0].coordinates
+                                            toAddress = places[0].address
+                                            Log.d("SelectAddressDialog", "Selected Recent Place: ${place.address}, Coordinates: $toPoint")
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("SelectAddressDialog", "Error fetching coordinates for recent place: ${e.message}")
+                                    }
+                                }
+                            }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.LocationOn,
                             contentDescription = "Location",
-                            tint = Color.Gray,
+                            tint = Color.Yellow,
                             modifier = Modifier.size(24.dp)
                         )
                         Column(
@@ -369,18 +327,19 @@ fun SelectAddressDialog(
             // Nút Confirm
             Button(
                 onClick = {
-                    onConfirm(fromPoint, toPoint)
+                    onConfirm(fromPoint, fromAddress, toPoint, toAddress)
                     onDismiss()
                 },
                 modifier = Modifier
-                    .width(336.dp)
+                    .fillMaxWidth()
                     .height(48.dp)
                     .padding(top = 16.dp)
                     .clip(RoundedCornerShape(8.dp)),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFEDAE10)
                 ),
-                contentPadding = PaddingValues(0.dp)
+                contentPadding = PaddingValues(0.dp),
+                enabled = toPoint != null && toAddress.isNotBlank() // Chỉ cho phép nhấn khi đã chọn điểm đến
             ) {
                 Text(
                     text = "Confirm",
