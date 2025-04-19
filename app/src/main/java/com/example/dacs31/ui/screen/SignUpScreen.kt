@@ -16,13 +16,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.example.dacs31.R
+import com.example.dacs31.data.AuthRepository
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SignUpScreen(navController: NavController) {
+fun SignUpScreen(
+    navController: NavController,
+    authRepository: AuthRepository
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var name by remember { mutableStateOf(TextFieldValue()) }
+    var email by remember { mutableStateOf(TextFieldValue()) }
+    var password by remember { mutableStateOf(TextFieldValue()) }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var gender by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf("Customer") }
+    var isTermsAccepted by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -30,7 +46,6 @@ fun SignUpScreen(navController: NavController) {
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -51,14 +66,6 @@ fun SignUpScreen(navController: NavController) {
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-
-        // Form fields
-        var name by remember { mutableStateOf(TextFieldValue()) }
-        var email by remember { mutableStateOf(TextFieldValue()) }
-        var password by remember { mutableStateOf(TextFieldValue()) }
-        var passwordVisible by remember { mutableStateOf(false) }
-        var gender by remember { mutableStateOf(TextFieldValue()) }
-        var isTermsAccepted by remember { mutableStateOf(false) }
 
         OutlinedTextField(
             value = name,
@@ -97,38 +104,72 @@ fun SignUpScreen(navController: NavController) {
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        var expanded by remember { mutableStateOf(false) }
+        var expandedGender by remember { mutableStateOf(false) }
         val genderOptions = listOf("Male", "Female", "Other")
-        var selectedGender by remember { mutableStateOf("") }
-
         ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded }
+            expanded = expandedGender,
+            onExpandedChange = { expandedGender = !expandedGender }
         ) {
             OutlinedTextField(
-                value = selectedGender,
+                value = gender,
                 onValueChange = {},
                 readOnly = true,
                 label = { Text("Gender") },
                 trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedGender)
                 },
                 modifier = Modifier
                     .menuAnchor()
                     .fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp)
             )
-
             ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
+                expanded = expandedGender,
+                onDismissRequest = { expandedGender = false }
             ) {
-                genderOptions.forEach { gender ->
+                genderOptions.forEach { option ->
                     DropdownMenuItem(
-                        text = { Text(gender) },
+                        text = { Text(option) },
                         onClick = {
-                            selectedGender = gender
-                            expanded = false
+                            gender = option
+                            expandedGender = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        var expandedRole by remember { mutableStateOf(false) }
+        val roleOptions = listOf("Customer", "Driver")
+        ExposedDropdownMenuBox(
+            expanded = expandedRole,
+            onExpandedChange = { expandedRole = !expandedRole }
+        ) {
+            OutlinedTextField(
+                value = selectedRole,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Role") },
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedRole)
+                },
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp)
+            )
+            ExposedDropdownMenu(
+                expanded = expandedRole,
+                onDismissRequest = { expandedRole = false }
+            ) {
+                roleOptions.forEach { role ->
+                    DropdownMenuItem(
+                        text = { Text(role) },
+                        onClick = {
+                            selectedRole = role
+                            expandedRole = false
                         }
                     )
                 }
@@ -137,7 +178,6 @@ fun SignUpScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Terms and Conditions
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -156,9 +196,29 @@ fun SignUpScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Sign Up Button
         Button(
-            onClick = { navController.navigate("profile") },
+            onClick = {
+                coroutineScope.launch {
+                    val result = authRepository.register(
+                        email = email.text,
+                        password = password.text,
+                        fullName = name.text,
+                        role = selectedRole
+                    )
+                    if (result.isSuccess) {
+                        navController.navigate("signin")
+                    } else {
+                        val error = result.exceptionOrNull()
+                        errorMessage = when {
+                            error?.message?.contains("The email address is already in use") == true ->
+                                "Email này đã được sử dụng. Vui lòng dùng email khác hoặc đăng nhập."
+                            error?.message?.contains("CONFIGURATION_NOT_FOUND") == true ->
+                                "Lỗi cấu hình reCAPTCHA. Vui lòng kiểm tra kết nối hoặc thử lại sau."
+                            else -> error?.message ?: "Đăng ký thất bại. Vui lòng thử lại."
+                        }
+                    }
+                }
+            },
             enabled = isTermsAccepted && name.text.isNotBlank() && email.text.isNotBlank() && password.text.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
@@ -167,9 +227,17 @@ fun SignUpScreen(navController: NavController) {
             Text("Sign Up", modifier = Modifier.padding(vertical = 8.dp))
         }
 
+        errorMessage?.let {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = it,
+                color = Color.Red,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Social login
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
@@ -202,7 +270,6 @@ fun SignUpScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Already have account
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -225,10 +292,3 @@ fun SignUpScreen(navController: NavController) {
     }
 }
 
-@Preview(showBackground = true)
-@Composable
-fun SignUpScreenPreview() {
-    MaterialTheme {
-        SignUpScreen(navController = rememberNavController())
-    }
-}

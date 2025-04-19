@@ -17,44 +17,29 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.dacs31.R
+import com.example.dacs31.data.AuthRepository
 
 @Composable
-fun TopControlBar(modifier: Modifier = Modifier) {
-    Row(
+fun TopControlBar(
+    modifier: Modifier = Modifier,
+    navController: NavController,
+    authRepository: AuthRepository // Thêm tham số AuthRepository
+) {
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        horizontalAlignment = Alignment.Start
     ) {
-        // Nút Menu (trái)
-        IconButton(
-            onClick = { /* Xử lý mở menu */ },
-            modifier = Modifier
-                .size(32.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(8.dp)
-                )
-        ) {
-            Icon(
-                imageVector = Icons.Default.Menu,
-                contentDescription = "Menu",
-                tint = Color.Black,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        // Spacer chiếm phần giữa để nút bên trái và phải sát mép
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Cụm nút Search + Notification (phải)
+        // Hàng chứa nút Menu và các nút bên phải
         Row(
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Nút Menu (trái)
             IconButton(
-                onClick = { /* Xử lý tìm kiếm */ },
+                onClick = { /* Xử lý mở menu */ },
                 modifier = Modifier
                     .size(32.dp)
                     .background(
@@ -63,27 +48,90 @@ fun TopControlBar(modifier: Modifier = Modifier) {
                     )
             ) {
                 Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
+                    imageVector = Icons.Default.Menu,
+                    contentDescription = "Menu",
                     tint = Color.Black,
                     modifier = Modifier.size(20.dp)
                 )
             }
 
-            IconButton(
-                onClick = { /* Xử lý thông báo */ },
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(8.dp)
+            // Spacer chiếm phần giữa để nút bên trái và phải sát mép
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Cụm nút Search + Notification (phải)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { /* Xử lý tìm kiếm */ },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = Color.Black,
+                        modifier = Modifier.size(20.dp)
                     )
+                }
+
+                IconButton(
+                    onClick = { /* Xử lý thông báo */ },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "Notifications",
+                        tint = Color.Black,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // Nút Sign Out (dưới nút Menu)
+        Button(
+            onClick = {
+                authRepository.signOut()
+                navController.navigate("signin") {
+                    popUpTo(navController.graph.startDestinationId) {
+                        inclusive = true
+                    }
+                }
+            },
+            modifier = Modifier
+                .padding(start = 4.dp, top = 8.dp)
+                .height(32.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFFFB800)
+            ),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Notifications,
-                    contentDescription = "Notifications",
+                    imageVector = Icons.Default.ExitToApp,
+                    contentDescription = "Sign Out",
                     tint = Color.Black,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Sign Out",
+                    color = Color.Black,
+                    style = MaterialTheme.typography.labelSmall
                 )
             }
         }

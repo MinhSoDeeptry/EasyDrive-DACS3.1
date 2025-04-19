@@ -41,6 +41,7 @@ android {
 }
 
 dependencies {
+
     // Mapbox Maps SDK
     implementation("com.mapbox.maps:android:11.4.0")
 
@@ -78,6 +79,7 @@ dependencies {
     // Testing
     implementation(libs.androidx.espresso.core)
     implementation(libs.androidx.animation.core.lint)
+    implementation(libs.firebase.firestore.ktx)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

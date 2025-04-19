@@ -1,6 +1,7 @@
 package com.example.dacs31.ui.screen
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
@@ -19,11 +20,21 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.dacs31.R
+import com.example.dacs31.data.AuthRepository
+import kotlinx.coroutines.launch
 
 @Composable
-fun SignInScreen(navController: NavController) {
+fun SignInScreen(
+    navController: NavController,
+    authRepository: AuthRepository
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var emailOrPhone by remember { mutableStateOf(TextFieldValue()) }
+    var password by remember { mutableStateOf(TextFieldValue()) }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -51,10 +62,6 @@ fun SignInScreen(navController: NavController) {
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-
-        var emailOrPhone by remember { mutableStateOf(TextFieldValue()) }
-        var password by remember { mutableStateOf(TextFieldValue()) }
-        var passwordVisible by remember { mutableStateOf(false) }
 
         OutlinedTextField(
             value = emailOrPhone,
@@ -98,21 +105,36 @@ fun SignInScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
         Button(
-            onClick = { navController.navigate("customer_home") }, // Chuyển đến DriverHomeScreen
+            onClick = {
+                coroutineScope.launch {
+                    val result = authRepository.login(emailOrPhone.text, password.text)
+                    if (result.isSuccess) {
+                        val role = authRepository.getUserRole()
+                        if (role == "Driver") {
+                            navController.navigate("driver_home")
+                        } else {
+                            navController.navigate("customer_home")
+                        }
+                    } else {
+                        errorMessage = result.exceptionOrNull()?.message ?: "Login failed"
+                    }
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
             shape = RoundedCornerShape(8.dp)
         ) {
             Text("Sign In", modifier = Modifier.padding(vertical = 8.dp))
         }
-//        Button(
-//            onClick = { navController.navigate("profile") }, // Chuyển đến Profile sau khi đăng nhập
-//            modifier = Modifier.fillMaxWidth(),
-//            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
-//            shape = RoundedCornerShape(8.dp)
-//        ) {
-//            Text("Sign In", modifier = Modifier.padding(vertical = 8.dp))
-//        }
+
+        errorMessage?.let {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = it,
+                color = Color.Red,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -174,6 +196,9 @@ fun SignInScreen(navController: NavController) {
 @Composable
 fun SignInScreenPreview() {
     MaterialTheme {
-        SignInScreen(navController = rememberNavController())
+        SignInScreen(
+            navController = rememberNavController(),
+            authRepository = AuthRepository()
+        )
     }
 }

@@ -21,16 +21,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.example.dacs31.R
+import com.example.dacs31.data.AuthRepository
+import com.example.dacs31.map.MapComponent
 import com.example.dacs31.ui.screen.componentsUI.TopControlBar
 import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
 import com.example.dacs31.ui.screen.location.RouteInfoDialog
@@ -38,44 +36,34 @@ import com.example.dacs31.ui.screen.location.SelectAddressDialog
 import com.example.dacs31.ui.screen.location.getRoute
 import com.example.dacs31.ui.screen.payment.PaymentScreen
 import com.example.dacs31.ui.screen.transport.SelectTransportScreen
-import com.example.dacs31.utils.getBitmapFromVectorDrawable
-import com.google.firebase.database.ktx.database
+import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
-import com.mapbox.geojson.Feature
-import com.mapbox.geojson.FeatureCollection
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.Timestamp
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
-import com.mapbox.maps.Style
-import com.mapbox.maps.plugin.annotation.annotations
-import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
-import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
-import com.mapbox.maps.plugin.locationcomponent.location
-import com.mapbox.maps.plugin.locationcomponent.createDefault2DPuck
-import com.mapbox.maps.extension.style.layers.addLayer
-import com.mapbox.maps.extension.style.layers.generated.lineLayer
-import com.mapbox.maps.extension.style.sources.addSource
-import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
-import com.mapbox.maps.extension.style.sources.getSourceAs
 import com.mapbox.turf.TurfMeasurement
 import kotlinx.coroutines.launch
 
 @Composable
-fun CustomerHomeScreen(navController: NavController) {
+fun CustomerHomeScreen(
+    navController: NavController,
+    authRepository: AuthRepository
+) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var mapView by remember { mutableStateOf<MapView?>(null) }
-    var pointAnnotationManager by remember { mutableStateOf<PointAnnotationManager?>(null) }
     var userLocation by remember { mutableStateOf<Point?>(null) }
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
     var showSelectAddressDialog by remember { mutableStateOf(false) }
     var showRouteInfoDialog by remember { mutableStateOf(false) }
     var showSelectTransportDialog by remember { mutableStateOf(false) }
     var showPaymentScreen by remember { mutableStateOf(false) }
+    var showDriverAcceptedDialog by remember { mutableStateOf(false) }
+    var showRequestCanceledDialog by remember { mutableStateOf(false) }
+    var showSuccessDialog by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Trạng thái để lưu tuyến đường, điểm From/To, khoảng cách, và địa chỉ
     var routePoints by remember { mutableStateOf<List<Point>>(emptyList()) }
     var fromPoint by remember { mutableStateOf<Point?>(null) }
     var toPoint by remember { mutableStateOf<Point?>(null) }
@@ -83,34 +71,31 @@ fun CustomerHomeScreen(navController: NavController) {
     var fromAddress by remember { mutableStateOf("Current location") }
     var toAddress by remember { mutableStateOf("") }
     var selectedTransport by remember { mutableStateOf<String?>(null) }
+    var currentRequestId by remember { mutableStateOf<String?>(null) }
+    var driverId by remember { mutableStateOf<String?>(null) }
+    var driverLocation by remember { mutableStateOf<Point?>(null) }
+    var mapViewInstance by remember { mutableStateOf<MapView?>(null) } // Lưu instance của MapView
 
-    // Trạng thái để theo dõi chế độ được chọn: "Transport" hoặc "Delivery"
     var selectedMode by remember { mutableStateOf("Transport") }
 
-    // Mapbox Access Token
+    val customerId = authRepository.getCurrentUser()?.uid
     val mapboxAccessToken = context.getString(R.string.mapbox_access_token)
-
-    // Coroutine scope để gọi API
     val coroutineScope = rememberCoroutineScope()
 
-    // Biến để theo dõi thời gian cập nhật vị trí cuối cùng
-    var lastLocationUpdateTime by remember { mutableStateOf(0L) }
-    val minUpdateInterval = 30_000L // 30 giây
+    val db = Firebase.firestore
+    val requestsCollection = db.collection("requests")
 
-    // Kiểm tra kết nối Firebase
     LaunchedEffect(Unit) {
-        val database = Firebase.database
-        val myRef = database.getReference("test_message")
-        myRef.setValue("Hello, Firebase!")
+        val testDocRef = db.collection("test").document("test_message")
+        testDocRef.set(mapOf("message" to "Hello, Firestore!"))
             .addOnSuccessListener {
-                Log.d("FirebaseTest", "Ghi dữ liệu thành công!")
+                Log.d("FirestoreTest", "Ghi dữ liệu thành công!")
             }
             .addOnFailureListener { e ->
-                Log.e("FirebaseTest", "Ghi dữ liệu thất bại: ${e.message}")
+                Log.e("FirestoreTest", "Ghi dữ liệu thất bại: ${e.message}")
             }
     }
 
-    // Xin quyền vị trí
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -123,7 +108,6 @@ fun CustomerHomeScreen(navController: NavController) {
         locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
-    // Hiển thị dialog nếu quyền vị trí bị từ chối
     if (showPermissionDeniedDialog) {
         AlertDialog(
             onDismissRequest = { showPermissionDeniedDialog = false },
@@ -137,7 +121,58 @@ fun CustomerHomeScreen(navController: NavController) {
         )
     }
 
-    // Hiển thị dialog "Select Address"
+    if (showDriverAcceptedDialog) {
+        AlertDialog(
+            onDismissRequest = { showDriverAcceptedDialog = false },
+            title = { Text("Yêu cầu được chấp nhận") },
+            text = { Text("Tài xế đã chấp nhận yêu cầu của bạn. Hãy chuẩn bị cho chuyến đi!") },
+            confirmButton = {
+                TextButton(onClick = { showDriverAcceptedDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    if (showRequestCanceledDialog) {
+        AlertDialog(
+            onDismissRequest = { showRequestCanceledDialog = false },
+            title = { Text("Yêu cầu bị hủy") },
+            text = { Text("Yêu cầu của bạn đã bị hủy. Vui lòng đặt lại chuyến đi.") },
+            confirmButton = {
+                TextButton(onClick = { showRequestCanceledDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    if (showSuccessDialog) {
+        AlertDialog(
+            onDismissRequest = { showSuccessDialog = false },
+            title = { Text("Thành công") },
+            text = { Text("Yêu cầu đặt xe đã được gửi thành công. Vui lòng chờ tài xế chấp nhận.") },
+            confirmButton = {
+                TextButton(onClick = { showSuccessDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    if (errorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { errorMessage = null },
+            title = { Text("Lỗi") },
+            text = { Text(errorMessage!!) },
+            confirmButton = {
+                TextButton(onClick = { errorMessage = null }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
     if (showSelectAddressDialog) {
         SelectAddressDialog(
             onDismiss = { showSelectAddressDialog = false },
@@ -154,7 +189,6 @@ fun CustomerHomeScreen(navController: NavController) {
                             routePoints = points
                             routeDistance = distance
                             Log.d("CustomerHomeScreen", "Route points received: $routePoints, Distance: $routeDistance m")
-                            // Hiển thị thông tin tuyến đường
                             showRouteInfoDialog = true
                         } catch (e: Exception) {
                             Log.e("MapboxDirections", "Error fetching route: ${e.message}")
@@ -171,7 +205,6 @@ fun CustomerHomeScreen(navController: NavController) {
         )
     }
 
-    // Hiển thị dialog "Select Transport"
     if (showSelectTransportDialog) {
         Log.d("CustomerHomeScreen", "Showing SelectTransportScreen")
         SelectTransportScreen(
@@ -182,13 +215,12 @@ fun CustomerHomeScreen(navController: NavController) {
             onTransportSelected = { transport ->
                 selectedTransport = transport
                 showSelectTransportDialog = false
-                showPaymentScreen = true // Chuyển sang PaymentScreen
+                showPaymentScreen = true
                 Log.d("CustomerHomeScreen", "Transport selected: $transport")
             }
         )
     }
 
-    // Hiển thị PaymentScreen
     if (showPaymentScreen) {
         PaymentScreen(
             selectedTransport = selectedTransport ?: "Car",
@@ -198,141 +230,174 @@ fun CustomerHomeScreen(navController: NavController) {
                 Log.d("CustomerHomeScreen", "PaymentScreen dismissed")
             },
             onConfirmRide = {
+                if (customerId == null) {
+                    errorMessage = "Vui lòng đăng nhập để đặt xe."
+                    showPaymentScreen = false
+                    navController.navigate("signin")
+                    return@PaymentScreen
+                }
+
+                if (fromPoint == null || toPoint == null) {
+                    errorMessage = "Điểm đi hoặc điểm đến không hợp lệ. Vui lòng thử lại."
+                    showPaymentScreen = false
+                    return@PaymentScreen
+                }
+
+                val requestData = mapOf(
+                    "customerId" to customerId,
+                    "pickupLocation" to mapOf(
+                        "latitude" to fromPoint!!.latitude(),
+                        "longitude" to fromPoint!!.longitude()
+                    ),
+                    "destination" to mapOf(
+                        "latitude" to toPoint!!.latitude(),
+                        "longitude" to toPoint!!.longitude()
+                    ),
+                    "status" to "pending",
+                    "driverId" to null,
+                    "createdAt" to Timestamp.now()
+                )
+                Log.d("Firestore", "Chuẩn bị lưu yêu cầu: $requestData")
+
+                requestsCollection.add(requestData)
+                    .addOnSuccessListener { documentReference ->
+                        val requestId = documentReference.id
+                        Log.d("Firestore", "Gửi yêu cầu đặt xe thành công, requestId: $requestId")
+                        currentRequestId = requestId
+                        showSuccessDialog = true
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("Firestore", "Gửi yêu cầu thất bại: ${e.message}")
+                        errorMessage = "Không thể gửi yêu cầu: ${e.message}. Vui lòng thử lại."
+                    }
+
                 showPaymentScreen = false
                 Log.d("CustomerHomeScreen", "Ride confirmed with transport: $selectedTransport")
-                // TODO: Xử lý logic xác nhận chuyến đi
             }
         )
     }
 
-    // Quản lý lifecycle cho MapView
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> mapView?.onStart()
-                Lifecycle.Event.ON_STOP -> mapView?.onStop()
-                Lifecycle.Event.ON_DESTROY -> mapView?.onDestroy()
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
+    var requestListener by remember { mutableStateOf<ListenerRegistration?>(null) }
+    var driverListener by remember { mutableStateOf<ListenerRegistration?>(null) }
+
+    LaunchedEffect(currentRequestId) {
+        requestListener?.remove()
+        requestListener = null
+
+        currentRequestId?.let { requestId ->
+            requestListener = requestsCollection.document(requestId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e("Firestore", "Lỗi khi lắng nghe trạng thái yêu cầu: ${error.message}")
+                        return@addSnapshotListener
+                    }
+
+                    if (snapshot != null && snapshot.exists()) {
+                        val status = snapshot.getString("status")
+                        val newDriverId = snapshot.getString("driverId")
+                        when (status) {
+                            "accepted" -> {
+                                showDriverAcceptedDialog = true
+                                driverId = newDriverId
+                            }
+                            "canceled" -> {
+                                showRequestCanceledDialog = true
+                                requestsCollection.document(requestId).delete()
+                                currentRequestId = null
+                                driverId = null
+                                driverLocation = null
+                            }
+                            "completed" -> {
+                                requestsCollection.document(requestId).delete()
+                                currentRequestId = null
+                                driverId = null
+                                driverLocation = null
+                            }
+                        }
+                    }
+                }
         }
     }
 
-    // Giao diện chính
+    LaunchedEffect(driverId) {
+        driverListener?.remove()
+        driverListener = null
+
+        driverId?.let { id ->
+            driverListener = db.collection("drivers").document(id)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e("Firestore", "Lỗi khi lắng nghe vị trí tài xế: ${error.message}")
+                        return@addSnapshotListener
+                    }
+
+                    if (snapshot != null && snapshot.exists()) {
+                        val locationData = snapshot.get("location") as? Map<String, Double>
+                        locationData?.let {
+                            val latitude = it["latitude"] ?: return@let
+                            val longitude = it["longitude"] ?: return@let
+                            driverLocation = Point.fromLngLat(longitude, latitude)
+                            Log.d("CustomerHomeScreen", "Vị trí tài xế cập nhật: $driverLocation")
+                        }
+                    }
+                }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            requestListener?.remove()
+            driverListener?.remove()
+        }
+    }
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Bản đồ Mapbox làm nền
-        AndroidView(
-            factory = { ctx ->
-                MapView(ctx).apply {
-                    val mapboxMap = getMapboxMap()
-                    mapboxMap.loadStyleUri(Style.MAPBOX_STREETS) { style ->
-                        try {
-                            // Thêm icon cho marker
-                            val userBitmap = ctx.getBitmapFromVectorDrawable(R.drawable.baseline_location_on_24)
-                            val startBitmap = ctx.getBitmapFromVectorDrawable(R.drawable.baseline_flag_24)
-                            val endBitmap = ctx.getBitmapFromVectorDrawable(R.drawable.baseline_destination_24)
+        // Lưu instance của MapView để điều chỉnh camera
+        var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
 
-                            style.addImage("user-location-marker", userBitmap)
-                            style.addImage("start-marker", startBitmap)
-                            style.addImage("end-marker", endBitmap)
-
-                            // Cấu hình hiển thị vị trí người dùng
-                            location.updateSettings {
-                                enabled = true
-                                locationPuck = createDefault2DPuck()
-                                pulsingEnabled = true
-                            }
-
-                            // Khởi tạo PointAnnotationManager
-                            val annotationApi = annotations
-                            pointAnnotationManager = annotationApi.createPointAnnotationManager()
-
-                            // Thêm source và layer để vẽ tuyến đường
-                            style.addSource(
-                                geoJsonSource("route-source") {
-                                    featureCollection(FeatureCollection.fromFeatures(emptyList()))
-                                }
-                            )
-
-                            style.addLayer(
-                                lineLayer("route-layer", "route-source") {
-                                    lineColor("#FF0000") // Màu đỏ cho tuyến đường
-                                    lineWidth(5.0)
-                                }
-                            )
-
-                            // Lắng nghe vị trí người dùng (chỉ lưu userLocation, không tự động di chuyển camera)
-                            location.addOnIndicatorPositionChangedListener { point ->
-                                userLocation = point
-                                Log.d("CustomerHomeScreen", "User location updated: $userLocation")
-                            }
-                        } catch (e: Exception) {
-                            Log.e("Mapbox", "Lỗi khi tải style hoặc thêm marker: ${e.message}")
-                        }
-                    }
-                    mapView = this
-                }
+        MapComponent(
+            modifier = Modifier.fillMaxSize(),
+            routePoints = routePoints,
+            fromPoint = fromPoint,
+            toPoint = toPoint,
+            driverLocation = driverLocation,
+            userLocation = userLocation,
+            onUserLocationUpdated = { point ->
+                userLocation = point
+                Log.d("CustomerHomeScreen", "User location updated: $userLocation")
             },
-            update = { mapView ->
-                Log.d("CustomerHomeScreen", "Updating map with routePoints: $routePoints")
-                // Cập nhật tuyến đường trên bản đồ
-                mapView.getMapboxMap().getStyle { style ->
-                    val source = style.getSourceAs<com.mapbox.maps.extension.style.sources.generated.GeoJsonSource>("route-source")
-                    if (routePoints.isNotEmpty()) {
-                        val lineString = LineString.fromLngLats(routePoints)
-                        val feature = Feature.fromGeometry(lineString)
-                        source?.featureCollection(FeatureCollection.fromFeature(feature))
-                        Log.d("CustomerHomeScreen", "Route drawn on map")
-
-                        // Thêm marker cho điểm From và To
-                        pointAnnotationManager?.deleteAll() // Xóa các marker cũ
-                        fromPoint?.let { from ->
-                            val startMarker = PointAnnotationOptions()
-                                .withPoint(from)
-                                .withIconImage("start-marker")
-                            pointAnnotationManager?.create(startMarker)
-                        }
-                        toPoint?.let { to ->
-                            val endMarker = PointAnnotationOptions()
-                                .withPoint(to)
-                                .withIconImage("end-marker")
-                            pointAnnotationManager?.create(endMarker)
-                        }
-
-                        // Điều chỉnh camera để hiển thị toàn bộ tuyến đường
-                        if (fromPoint != null && toPoint != null) {
-                            val bounds = TurfMeasurement.bbox(LineString.fromLngLats(routePoints))
-                            mapView.getMapboxMap().setCamera(
-                                CameraOptions.Builder()
-                                    .center(Point.fromLngLat((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2))
-                                    .zoom(12.0)
-                                    .build()
-                            )
-                            Log.d("CustomerHomeScreen", "Camera adjusted to show route")
-                        }
-                    } else {
-                        source?.featureCollection(FeatureCollection.fromFeatures(emptyList()))
-                        Log.w("CustomerHomeScreen", "No route points to draw")
-                    }
-                }
+            onMapReady = { mapView, pointAnnotationManager ->
+                Log.d("CustomerHomeScreen", "Map is ready")
             },
-            modifier = Modifier.fillMaxSize()
+            onMapViewReady = { mapView ->
+                mapViewInstance = mapView
+            }
         )
 
-        // Thanh điều khiển phía trên
+        // Tự động di chuyển camera đến vị trí người dùng khi có userLocation
+        LaunchedEffect(userLocation) {
+            userLocation?.let { point ->
+                mapViewInstance?.getMapboxMap()?.setCamera(
+                    CameraOptions.Builder()
+                        .center(point)
+                        .zoom(15.0)
+                        .build()
+                )
+                Log.d("CustomerHomeScreen", "Camera moved to user location: $point")
+            }
+        }
+
         TopControlBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
-                .align(Alignment.TopCenter)
+                .align(Alignment.TopCenter),
+            navController = navController,
+            authRepository = authRepository
         )
 
-        // Thanh điều khiển phía dưới
         BottomControlBar(
             navController = navController,
             modifier = Modifier
@@ -340,22 +405,28 @@ fun CustomerHomeScreen(navController: NavController) {
                 .align(Alignment.BottomCenter)
         )
 
-        // Nút "My Location" ở góc phải dưới
         FloatingActionButton(
             onClick = {
                 userLocation?.let { point ->
-                    mapView?.getMapboxMap()?.setCamera(
-                        CameraOptions.Builder()
-                            .center(point)
-                            .zoom(15.0)
-                            .build()
-                    )
-                    pointAnnotationManager?.deleteAll()
-                    val pointAnnotationOptions = PointAnnotationOptions()
-                        .withPoint(point)
-                        .withIconImage("user-location-marker")
-                    pointAnnotationManager?.create(pointAnnotationOptions)
-                    Log.d("CustomerHomeScreen", "Moved camera to user location: $point")
+                    driverLocation?.let { driver ->
+                        val points = listOf(point, driver)
+                        val bounds = TurfMeasurement.bbox(LineString.fromLngLats(points))
+                        mapViewInstance?.getMapboxMap()?.setCamera(
+                            CameraOptions.Builder()
+                                .center(Point.fromLngLat((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2))
+                                .zoom(12.0)
+                                .build()
+                        )
+                        Log.d("CustomerHomeScreen", "Moved camera to show user and driver")
+                    } ?: run {
+                        mapViewInstance?.getMapboxMap()?.setCamera(
+                            CameraOptions.Builder()
+                                .center(point)
+                                .zoom(15.0)
+                                .build()
+                        )
+                        Log.d("CustomerHomeScreen", "Moved camera to user location: $point")
+                    }
                 } ?: run {
                     Log.w("CustomerHomeScreen", "User location is null")
                     showPermissionDeniedDialog = true
@@ -374,7 +445,6 @@ fun CustomerHomeScreen(navController: NavController) {
             )
         }
 
-        // Hiển thị RouteInfoDialog sát dưới màn hình
         if (showRouteInfoDialog) {
             RouteInfoDialog(
                 fromAddress = fromAddress,
@@ -382,7 +452,7 @@ fun CustomerHomeScreen(navController: NavController) {
                 distance = routeDistance,
                 onDismiss = {
                     showRouteInfoDialog = false
-                    showSelectTransportDialog = true // Hiển thị SelectTransportScreen sau khi nhấn Confirm
+                    showSelectTransportDialog = true
                     Log.d("CustomerHomeScreen", "RouteInfoDialog dismissed, opening SelectTransportScreen")
                 },
                 modifier = Modifier
@@ -392,7 +462,6 @@ fun CustomerHomeScreen(navController: NavController) {
             )
         }
 
-        // Các nút ở giữa, đặt sát gần BottomControlBar
         if (!showRouteInfoDialog) {
             Column(
                 modifier = Modifier
@@ -402,7 +471,6 @@ fun CustomerHomeScreen(navController: NavController) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Nút "Rental"
                 Button(
                     onClick = { /* TODO: Xử lý khi nhấn Rental */ },
                     modifier = Modifier
@@ -426,7 +494,6 @@ fun CustomerHomeScreen(navController: NavController) {
                     )
                 }
 
-                // Ô tìm kiếm
                 Box(
                     modifier = Modifier
                         .width(336.dp)
@@ -464,7 +531,6 @@ fun CustomerHomeScreen(navController: NavController) {
                     }
                 }
 
-                // Tab/Switch cho "Transport" và "Delivery"
                 Row(
                     modifier = Modifier
                         .width(336.dp)
@@ -477,7 +543,6 @@ fun CustomerHomeScreen(navController: NavController) {
                             RoundedCornerShape(8.dp)
                         )
                 ) {
-                    // Tab "Transport"
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -499,7 +564,6 @@ fun CustomerHomeScreen(navController: NavController) {
                         )
                     }
 
-                    // Tab "Delivery"
                     Box(
                         modifier = Modifier
                             .weight(1f)
