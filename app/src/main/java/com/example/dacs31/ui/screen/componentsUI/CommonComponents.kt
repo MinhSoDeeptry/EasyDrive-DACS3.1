@@ -4,10 +4,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.lint.Names.Runtime.LaunchedEffect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,53 +25,61 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.dacs31.R
 import com.example.dacs31.data.AuthRepository
+import com.example.dacs31.data.User
+import kotlinx.coroutines.launch
 
 @Composable
 fun TopControlBar(
     modifier: Modifier = Modifier,
     navController: NavController,
-    authRepository: AuthRepository // Thêm tham số AuthRepository
+    authRepository: AuthRepository,
+    onDrawerStateChange: (Boolean) -> Unit = {} // Thêm callback để thông báo trạng thái drawer
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.Start
+    val coroutineScope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    var user by remember { mutableStateOf<User?>(null) }
+
+    // Theo dõi trạng thái drawer để thông báo cho màn hình chính
+    LaunchedEffect(drawerState.isOpen) {
+        onDrawerStateChange(drawerState.isOpen)
+    }
+
+    LaunchedEffect(Unit) {
+        coroutineScope.launch {
+            user = authRepository.getCurrentUser()
+        }
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+
+        drawerContent = {
+            SideMenuDrawer(
+                user = user,
+                navController = navController,
+                authRepository = authRepository,
+                onDrawerClose = {
+                    coroutineScope.launch { drawerState.close() }
+                }
+            )
+        },
+        modifier = Modifier.systemBarsPadding()
     ) {
-        // Hàng chứa nút Menu và các nút bên phải
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.Start
         ) {
-            // Nút Menu (trái)
-            IconButton(
-                onClick = { /* Xử lý mở menu */ },
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Menu,
-                    contentDescription = "Menu",
-                    tint = Color.Black,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            // Spacer chiếm phần giữa để nút bên trái và phải sát mép
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Cụm nút Search + Notification (phải)
             Row(
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = { /* Xử lý tìm kiếm */ },
+                    onClick = {
+                        coroutineScope.launch { drawerState.open() }
+                    },
                     modifier = Modifier
                         .size(32.dp)
                         .background(
@@ -73,67 +88,55 @@ fun TopControlBar(
                         )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "Menu",
                         tint = Color.Black,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
-                IconButton(
-                    onClick = { /* Xử lý thông báo */ },
-                    modifier = Modifier
-                        .size(32.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(8.dp)
-                        )
+                Spacer(modifier = Modifier.weight(1f))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Notifications,
-                        contentDescription = "Notifications",
-                        tint = Color.Black,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
+                    IconButton(
+                        onClick = { /* Xử lý tìm kiếm */ },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = Color.Black,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
 
-        // Nút Sign Out (dưới nút Menu)
-        Button(
-            onClick = {
-                authRepository.signOut()
-                navController.navigate("signin") {
-                    popUpTo(navController.graph.startDestinationId) {
-                        inclusive = true
+                    IconButton(
+                        onClick = { /* Xử lý thông báo */ },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "Notifications",
+                            tint = Color.Black,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
-            },
-            modifier = Modifier
-                .padding(start = 4.dp, top = 8.dp)
-                .height(32.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFFFB800)
-            ),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ExitToApp,
-                    contentDescription = "Sign Out",
-                    tint = Color.Black,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Sign Out",
-                    color = Color.Black,
-                    style = MaterialTheme.typography.labelSmall
-                )
             }
+
         }
     }
 }
@@ -234,7 +237,7 @@ fun BottomNavigationBar(navController: NavController, modifier: Modifier = Modif
                     Box(
                         modifier = Modifier
                             .size(80.dp)
-                            .offset(y = 0.dp) // Sát đáy luôn
+                            .offset(y = 0.dp)
                             .clickable {
                                 if (currentRoute != route) {
                                     navController.navigate(route) {
@@ -252,7 +255,7 @@ fun BottomNavigationBar(navController: NavController, modifier: Modifier = Modif
                             painter = painterResource(id = R.drawable.ic_wallet_hexagon),
                             contentDescription = title,
                             tint = Color.Unspecified,
-                            modifier = Modifier.size(110.dp) // To hơn
+                            modifier = Modifier.size(110.dp)
                         )
                     }
                 } else {

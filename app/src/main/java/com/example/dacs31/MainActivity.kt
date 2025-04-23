@@ -14,8 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.dacs31.data.AuthRepository
-import com.example.dacs31.ui.screen.SignInScreen
-import com.example.dacs31.ui.screen.SignUpScreen
+import com.example.dacs31.ui.screen.*
 import com.example.dacs31.ui.screen.customer.CustomerHomeScreen
 import com.example.dacs31.ui.screen.driver.DriverHomeScreen
 import com.example.dacs31.ui.theme.DACS31Theme
@@ -38,33 +37,29 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation(authRepository: AuthRepository) {
     val navController = rememberNavController()
     val coroutineScope = rememberCoroutineScope()
-    var startDestination by remember { mutableStateOf("signin") } // Khởi tạo mặc định
+    var startDestination by remember { mutableStateOf("signin") }
 
-    // Lấy trạng thái đăng nhập và vai trò khi ứng dụng khởi động
     LaunchedEffect(Unit) {
-        // Làm mới token nếu có người dùng hiện tại
-        val currentUser = authRepository.getCurrentUser()
-        if (currentUser != null) {
-            try {
-                currentUser.uid?.let { uid ->
-                    val role = authRepository.getUserRole()
-                    startDestination = when (role) {
+        coroutineScope.launch {
+            val currentUser = authRepository.getCurrentUser()
+            startDestination = if (currentUser != null) {
+                try {
+                    val role = authRepository.getUserRole() ?: "unknown"
+                    when (role) {
                         "driver" -> "driver_home"
                         "customer" -> "customer_home"
-                        else -> "signin" // Nếu vai trò không hợp lệ, chuyển về đăng nhập
+                        else -> "signin"
                     }
+                } catch (e: Exception) {
+                    "signin"
                 }
-            } catch (e: Exception) {
-                // Nếu có lỗi khi lấy vai trò, chuyển về màn hình đăng nhập
-                startDestination = "signin"
+            } else {
+                "signin"
             }
-        } else {
-            startDestination = "signin"
-        }
 
-        // Điều hướng đến startDestination
-        navController.navigate(startDestination) {
-            popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            navController.navigate(startDestination) {
+                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            }
         }
     }
 
@@ -93,5 +88,71 @@ fun AppNavigation(authRepository: AuthRepository) {
                 authRepository = authRepository
             )
         }
+        composable("profile") {
+            ProfileScreen(
+                navController = navController,
+                authRepository = authRepository
+            )
+        }
+//        composable("history") {
+//            HistoryScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
+//        composable("compliment") {
+//            ComplimentScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
+//        composable("balance") {
+//            BalanceScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
+//        composable("about_us") {
+//            AboutUsScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
+//        composable("settings") {
+//            SettingsScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
+//        composable("help_support") {
+//            HelpSupportScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
+        composable("home") {
+            CustomerHomeScreen(
+                navController = navController,
+                authRepository = authRepository
+            )
+        }
+//        composable("favourite") {
+//            FavouriteScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
+//        composable("wallet") {
+//            WalletScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
+//        composable("offer") {
+//            OfferScreen(
+//                navController = navController,
+//                authRepository = authRepository
+//            )
+//        }
     }
 }

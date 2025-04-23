@@ -79,6 +79,7 @@ fun CustomerHomeScreen(
     var driverLocation by remember { mutableStateOf<Point?>(null) }
     var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
     var isPending by remember { mutableStateOf(false) }
+    var isDrawerOpen by remember { mutableStateOf(false) } // Thêm trạng thái drawer
 
     var selectedMode by remember { mutableStateOf("Transport") }
 
@@ -119,7 +120,6 @@ fun CustomerHomeScreen(
         Log.d("CustomerHomeScreen", "Customer ID: $customerId")
     }
 
-    // Đợi customerId được gán trước khi tiếp tục
     if (customerId == null) {
         Log.d("CustomerHomeScreen", "Đang chờ customerId, hiển thị loading")
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -479,14 +479,10 @@ fun CustomerHomeScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .align(Alignment.TopCenter),
             navController = navController,
-            authRepository = authRepository
-        )
-
-        BottomControlBar(
-            navController = navController,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
+            authRepository = authRepository,
+            onDrawerStateChange = { isOpen ->
+                isDrawerOpen = isOpen
+            }
         )
 
         FloatingActionButton(
@@ -529,6 +525,15 @@ fun CustomerHomeScreen(
             )
         }
 
+        if (!isDrawerOpen) { // Ẩn BottomControlBar khi drawer mở
+            BottomControlBar(
+                navController = navController,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+            )
+        }
+
         if (showRouteInfoDialog) {
             RouteInfoDialog(
                 fromAddress = fromAddress,
@@ -546,7 +551,7 @@ fun CustomerHomeScreen(
             )
         }
 
-        if (!showRouteInfoDialog) {
+        if (!showRouteInfoDialog && !isDrawerOpen) { // Ẩn Column khi drawer mở hoặc RouteInfoDialog hiển thị
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

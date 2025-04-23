@@ -16,14 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
-import com.example.dacs31.R
 import com.example.dacs31.data.AuthRepository
 import com.example.dacs31.data.User
 import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
@@ -51,14 +49,11 @@ fun ProfileScreen(
         val db = Firebase.firestore
         val usersCollection = db.collection("users")
 
-        // Lấy thông tin người dùng hiện tại
+        // Lấy thông tin người dùng
         LaunchedEffect(Unit) {
             val currentUser = authRepository.getCurrentUser()
             if (currentUser == null) {
-                Log.e(
-                    "ProfileScreen",
-                    "Người dùng chưa đăng nhập, điều hướng đến màn hình đăng nhập"
-                )
+                Log.e("ProfileScreen", "Người dùng chưa đăng nhập")
                 errorMessage = "Vui lòng đăng nhập để tiếp tục."
                 navController.navigate("signin") {
                     popUpTo(navController.graph.startDestinationId) { inclusive = true }
@@ -66,7 +61,6 @@ fun ProfileScreen(
                 return@LaunchedEffect
             }
 
-            // Lấy thông tin từ Firestore
             val userFromFirestore = authRepository.getUserFromFirestore(currentUser.uid)
             if (userFromFirestore != null) {
                 user = userFromFirestore
@@ -76,9 +70,7 @@ fun ProfileScreen(
                 gender = userFromFirestore.gender
                 address = userFromFirestore.address
                 isLoading = false
-                Log.d("ProfileScreen", "Lấy thông tin người dùng thành công: $fullName, $email")
             } else {
-                // Nếu tài liệu không tồn tại, tạo mới với thông tin cơ bản
                 val userData = User(
                     uid = currentUser.uid,
                     email = currentUser.email,
@@ -91,17 +83,14 @@ fun ProfileScreen(
                         fullName = userData.fullName
                         email = userData.email
                         isLoading = false
-                        Log.d("ProfileScreen", "Tạo tài liệu người dùng mới thành công")
                     }
                     .addOnFailureListener { e ->
                         errorMessage = "Không thể tạo hồ sơ: ${e.message}"
                         isLoading = false
-                        Log.e("ProfileScreen", "Tạo tài liệu người dùng thất bại: ${e.message}")
                     }
             }
         }
 
-        // Đợi thông tin người dùng được tải
         if (isLoading || user == null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -118,7 +107,7 @@ fun ProfileScreen(
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Tiêu đề
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -126,15 +115,16 @@ fun ProfileScreen(
                 IconButton(onClick = { navController.popBackStack() }) {
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
+                        contentDescription = "Back"
                     )
                 }
                 Text(
                     text = "Edit Profile",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).wrapContentWidth(Alignment.CenterHorizontally)
+                    modifier = Modifier
+                        .weight(1f)
+                        .wrapContentWidth(Alignment.CenterHorizontally)
                 )
                 Spacer(modifier = Modifier.width(48.dp))
             }
@@ -143,8 +133,7 @@ fun ProfileScreen(
 
             // Avatar
             Box(
-                modifier = Modifier
-                    .size(100.dp),
+                modifier = Modifier.size(100.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
@@ -161,7 +150,7 @@ fun ProfileScreen(
                     )
                 }
                 IconButton(
-                    onClick = { /* TODO: Chọn ảnh */ },
+                    onClick = { /* TODO */ },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .offset(x = 8.dp, y = 8.dp)
@@ -171,7 +160,7 @@ fun ProfileScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Edit Profile Picture",
+                        contentDescription = "Edit",
                         tint = Color.White,
                         modifier = Modifier.size(16.dp)
                     )
@@ -180,7 +169,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Tên người dùng
             Text(
                 text = fullName,
                 style = MaterialTheme.typography.titleLarge,
@@ -189,14 +177,13 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Email (chỉ đọc)
             OutlinedTextField(
                 value = email,
                 onValueChange = {},
                 label = { Text("Email") },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
                 enabled = false,
+                shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     disabledTextColor = Color.Black,
                     disabledBorderColor = Color.Gray,
@@ -206,7 +193,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Số điện thoại
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -218,7 +204,7 @@ fun ProfileScreen(
                     Box(
                         modifier = Modifier
                             .size(24.dp)
-                            .background(Color.Green) // Thay bằng hình ảnh cờ Bangladesh
+                            .background(Color.Green)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("+880", style = MaterialTheme.typography.bodyMedium)
@@ -235,14 +221,10 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Giới tính (Dropdown)
             var expanded by remember { mutableStateOf(false) }
             val genderOptions = listOf("Male", "Female", "Other")
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight()
-            ) {
+
+            Box(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = gender,
                     onValueChange = {},
@@ -265,8 +247,7 @@ fun ProfileScreen(
                 )
                 DropdownMenu(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.fillMaxWidth()
+                    onDismissRequest = { expanded = false }
                 ) {
                     genderOptions.forEach { option ->
                         DropdownMenuItem(
@@ -282,7 +263,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Địa chỉ
             OutlinedTextField(
                 value = address,
                 onValueChange = { address = it },
@@ -294,7 +274,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Nút Update
             Button(
                 onClick = {
                     coroutineScope.launch {
@@ -308,12 +287,10 @@ fun ProfileScreen(
                         )
                         usersCollection.document(user!!.uid).update(updatedData)
                             .addOnSuccessListener {
-                                Log.d("ProfileScreen", "Cập nhật hồ sơ thành công")
                                 isUpdating = false
                                 navController.popBackStack()
                             }
                             .addOnFailureListener { e ->
-                                Log.e("ProfileScreen", "Cập nhật hồ sơ thất bại: ${e.message}")
                                 errorMessage = "Cập nhật thất bại: ${e.message}"
                                 isUpdating = false
                             }
@@ -337,7 +314,6 @@ fun ProfileScreen(
                 }
             }
 
-            // Hiển thị thông báo lỗi nếu có
             errorMessage?.let {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -347,18 +323,13 @@ fun ProfileScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(64.dp)) // <--- Fix scroll by spacing for BottomControlBar
         }
 
-        // Thanh điều hướng dưới cùng
-        BottomControlBar(
-            navController = navController,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-        )
+
     }
 }
+
 @Preview(showBackground = true)
 @Composable
 fun ProfileScreenPreview() {
