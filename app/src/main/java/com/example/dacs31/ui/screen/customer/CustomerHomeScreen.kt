@@ -29,17 +29,18 @@ import androidx.navigation.NavController
 import com.example.dacs31.R
 import com.example.dacs31.data.AuthRepository
 import com.example.dacs31.map.MapComponent
-import com.example.dacs31.ui.screen.componentsUI.TopControlBar
+import com.example.dacs31.ui.screen.WaitingScreen
 import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
+import com.example.dacs31.ui.screen.componentsUI.TopControlBar
 import com.example.dacs31.ui.screen.location.RouteInfoDialog
 import com.example.dacs31.ui.screen.location.SelectAddressDialog
 import com.example.dacs31.ui.screen.location.getRoute
 import com.example.dacs31.ui.screen.payment.PaymentScreen
 import com.example.dacs31.ui.screen.transport.SelectTransportScreen
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
-import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.Timestamp
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
@@ -61,7 +62,6 @@ fun CustomerHomeScreen(
     var showPaymentScreen by remember { mutableStateOf(false) }
     var showDriverAcceptedDialog by remember { mutableStateOf(false) }
     var showRequestCanceledDialog by remember { mutableStateOf(false) }
-    var showSuccessDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     var routePoints by remember { mutableStateOf<List<Point>>(emptyList()) }
@@ -74,7 +74,8 @@ fun CustomerHomeScreen(
     var currentRequestId by remember { mutableStateOf<String?>(null) }
     var driverId by remember { mutableStateOf<String?>(null) }
     var driverLocation by remember { mutableStateOf<Point?>(null) }
-    var mapViewInstance by remember { mutableStateOf<MapView?>(null) } // Lưu instance của MapView
+    var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
+    var isPending by remember { mutableStateOf(false) }
 
     var selectedMode by remember { mutableStateOf("Transport") }
 
@@ -106,6 +107,28 @@ fun CustomerHomeScreen(
 
     LaunchedEffect(Unit) {
         locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+
+    // If the state is pending, show WaitingScreen
+    if (isPending && currentRequestId != null) {
+        WaitingScreen(
+            userLocation = userLocation,
+            mapboxAccessToken = mapboxAccessToken,
+            currentRequestId = currentRequestId!!,
+            selectedTransport = selectedTransport,
+            onRequestAccepted = {
+                isPending = false
+                showDriverAcceptedDialog = true
+            },
+            onRequestCanceled = {
+                isPending = false
+                showRequestCanceledDialog = true
+                currentRequestId = null
+                driverId = null
+                driverLocation = null
+            }
+        )
+        return
     }
 
     if (showPermissionDeniedDialog) {
@@ -141,19 +164,6 @@ fun CustomerHomeScreen(
             text = { Text("Yêu cầu của bạn đã bị hủy. Vui lòng đặt lại chuyến đi.") },
             confirmButton = {
                 TextButton(onClick = { showRequestCanceledDialog = false }) {
-                    Text("OK")
-                }
-            }
-        )
-    }
-
-    if (showSuccessDialog) {
-        AlertDialog(
-            onDismissRequest = { showSuccessDialog = false },
-            title = { Text("Thành công") },
-            text = { Text("Yêu cầu đặt xe đã được gửi thành công. Vui lòng chờ tài xế chấp nhận.") },
-            confirmButton = {
-                TextButton(onClick = { showSuccessDialog = false }) {
                     Text("OK")
                 }
             }
@@ -264,7 +274,7 @@ fun CustomerHomeScreen(
                         val requestId = documentReference.id
                         Log.d("Firestore", "Gửi yêu cầu đặt xe thành công, requestId: $requestId")
                         currentRequestId = requestId
-                        showSuccessDialog = true
+                        isPending = true // Chuyển thẳng sang trạng thái pending
                     }
                     .addOnFailureListener { e ->
                         Log.e("Firestore", "Gửi yêu cầu thất bại: ${e.message}")
@@ -297,11 +307,15 @@ fun CustomerHomeScreen(
                         val newDriverId = snapshot.getString("driverId")
                         when (status) {
                             "accepted" -> {
-                                showDriverAcceptedDialog = true
+                                if (!isPending) {
+                                    showDriverAcceptedDialog = true
+                                }
                                 driverId = newDriverId
                             }
                             "canceled" -> {
-                                showRequestCanceledDialog = true
+                                if (!isPending) {
+                                    showRequestCanceledDialog = true
+                                }
                                 requestsCollection.document(requestId).delete()
                                 currentRequestId = null
                                 driverId = null
@@ -354,9 +368,6 @@ fun CustomerHomeScreen(
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Lưu instance của MapView để điều chỉnh camera
-        var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
-
         MapComponent(
             modifier = Modifier.fillMaxSize(),
             routePoints = routePoints,
@@ -376,7 +387,6 @@ fun CustomerHomeScreen(
             }
         )
 
-        // Tự động di chuyển camera đến vị trí người dùng khi có userLocation
         LaunchedEffect(userLocation) {
             userLocation?.let { point ->
                 mapViewInstance?.getMapboxMap()?.setCamera(

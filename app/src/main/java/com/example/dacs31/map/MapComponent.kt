@@ -45,9 +45,10 @@ fun MapComponent(
     toPoint: Point? = null,
     driverLocation: Point? = null,
     userLocation: Point? = null,
+    nearbyDrivers: List<Point> = emptyList(), // Thêm tham số để hiển thị tài xế lân cận
     onUserLocationUpdated: (Point) -> Unit = {},
     onMapReady: (MapView, PointAnnotationManager) -> Unit = { _, _ -> },
-    onMapViewReady: (MapView) -> Unit = {} // Thêm callback để cung cấp MapView
+    onMapViewReady: (MapView) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -75,7 +76,7 @@ fun MapComponent(
                 setupMap(context, this) { annotationManager ->
                     pointAnnotationManager = annotationManager
                     onMapReady(this, annotationManager)
-                    onMapViewReady(this) // Gọi callback để cung cấp MapView
+                    onMapViewReady(this)
                 }
                 location.addOnIndicatorPositionChangedListener { point ->
                     onUserLocationUpdated(point)
@@ -92,6 +93,7 @@ fun MapComponent(
                     toPoint = toPoint,
                     driverLocation = driverLocation,
                     userLocation = userLocation,
+                    nearbyDrivers = nearbyDrivers, // Truyền danh sách tài xế lân cận
                     pointAnnotationManager = pointAnnotationManager,
                     mapView = mv
                 )
@@ -155,11 +157,15 @@ private fun updateMap(
     toPoint: Point?,
     driverLocation: Point?,
     userLocation: Point?,
+    nearbyDrivers: List<Point>,
     pointAnnotationManager: PointAnnotationManager?,
     mapView: MapView
 ) {
-    Log.d("MapComponent", "Updating map with routePoints: $routePoints, driverLocation: $driverLocation")
+    Log.d("MapComponent", "Updating map with routePoints: $routePoints, driverLocation: $driverLocation, nearbyDrivers: $nearbyDrivers")
     val source = style.getSourceAs<com.mapbox.maps.extension.style.sources.generated.GeoJsonSource>("route-source")
+
+    // Xóa tất cả các marker cũ
+    pointAnnotationManager?.deleteAll()
 
     if (routePoints.isNotEmpty()) {
         val lineString = LineString.fromLngLats(routePoints)
@@ -167,7 +173,6 @@ private fun updateMap(
         source?.featureCollection(FeatureCollection.fromFeature(feature))
         Log.d("MapComponent", "Route drawn on map")
 
-        pointAnnotationManager?.deleteAll()
         fromPoint?.let { from ->
             val startMarker = PointAnnotationOptions()
                 .withPoint(from)
@@ -196,6 +201,17 @@ private fun updateMap(
         Log.w("MapComponent", "No route points to draw")
     }
 
+    // Hiển thị vị trí người dùng
+    userLocation?.let { user ->
+        pointAnnotationManager?.create(
+            PointAnnotationOptions()
+                .withPoint(user)
+                .withIconImage("user-location-marker")
+        )
+        Log.d("MapComponent", "User marker added at: $user")
+    }
+
+    // Hiển thị vị trí tài xế chính (nếu có)
     driverLocation?.let { driver ->
         pointAnnotationManager?.create(
             PointAnnotationOptions()
@@ -205,12 +221,13 @@ private fun updateMap(
         Log.d("MapComponent", "Driver marker added at: $driver")
     }
 
-    userLocation?.let { user ->
+    // Hiển thị các tài xế lân cận
+    nearbyDrivers.forEach { driver ->
         pointAnnotationManager?.create(
             PointAnnotationOptions()
-                .withPoint(user)
-                .withIconImage("user-location-marker")
+                .withPoint(driver)
+                .withIconImage("driver-marker")
         )
-        Log.d("MapComponent", "User marker added at: $user")
     }
+    Log.d("MapComponent", "Nearby drivers added: $nearbyDrivers")
 }
