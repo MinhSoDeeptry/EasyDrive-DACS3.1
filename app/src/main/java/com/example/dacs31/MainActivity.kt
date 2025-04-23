@@ -17,6 +17,7 @@ import com.example.dacs31.data.AuthRepository
 import com.example.dacs31.ui.screen.*
 import com.example.dacs31.ui.screen.customer.CustomerHomeScreen
 import com.example.dacs31.ui.screen.driver.DriverHomeScreen
+import com.example.dacs31.ui.screen.history.HistoryScreen
 import com.example.dacs31.ui.theme.DACS31Theme
 import kotlinx.coroutines.launch
 
@@ -93,6 +94,9 @@ fun AppNavigation(authRepository: AuthRepository) {
                 navController = navController,
                 authRepository = authRepository
             )
+        }
+        composable("history") {
+            HistoryScreen(navController = navController, authRepository = authRepository)
         }
 //        composable("history") {
 //            HistoryScreen(

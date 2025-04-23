@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExitToApp
@@ -129,10 +130,10 @@ fun SideMenuDrawer(
         )
 
         DrawerItem(
-            icon = Icons.Default.LocalOffer,
-            label = "Offer",
+            icon = Icons.Default.AccessTime,
+            label = "History",
             onClick = {
-                navController.navigate("offer") {
+                navController.navigate("history") {
                     popUpTo(navController.graph.startDestinationId) { inclusive = true }
                 }
                 onDrawerClose()

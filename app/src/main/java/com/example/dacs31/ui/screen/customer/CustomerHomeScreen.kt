@@ -387,7 +387,7 @@ fun CustomerHomeScreen(
                                 if (!isPending) {
                                     showRequestCanceledDialog = true
                                 }
-                                requestsCollection.document(requestId).delete()
+//                                requestsCollection.document(requestId).delete()
                                 currentRequestId = null
                                 driverId = null
                                 driverLocation = null
@@ -396,7 +396,7 @@ fun CustomerHomeScreen(
                                 requestsCollection.document(requestId).get()
                                     .addOnSuccessListener { document ->
                                         if (document.exists()) {
-                                            requestsCollection.document(requestId).delete()
+//                                            requestsCollection.document(requestId).delete()
                                         }
                                         currentRequestId = null
                                         driverId = null
