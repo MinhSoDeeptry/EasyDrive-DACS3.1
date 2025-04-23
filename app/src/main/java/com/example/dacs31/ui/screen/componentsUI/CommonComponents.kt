@@ -2,9 +2,9 @@ package com.example.dacs31.ui.screen.componentsUI
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.lint.Names.Runtime.LaunchedEffect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -28,58 +28,55 @@ import com.example.dacs31.data.AuthRepository
 import com.example.dacs31.data.User
 import kotlinx.coroutines.launch
 
+
 @Composable
 fun TopControlBar(
     modifier: Modifier = Modifier,
-    navController: NavController,
-    authRepository: AuthRepository,
-    onDrawerStateChange: (Boolean) -> Unit = {} // Thêm callback để thông báo trạng thái drawer
+    onMenuClick: () -> Unit
 ) {
-    val coroutineScope = rememberCoroutineScope()
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    var user by remember { mutableStateOf<User?>(null) }
-
-    // Theo dõi trạng thái drawer để thông báo cho màn hình chính
-    LaunchedEffect(drawerState.isOpen) {
-        onDrawerStateChange(drawerState.isOpen)
-    }
-
-    LaunchedEffect(Unit) {
-        coroutineScope.launch {
-            user = authRepository.getCurrentUser()
-        }
-    }
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-
-        drawerContent = {
-            SideMenuDrawer(
-                user = user,
-                navController = navController,
-                authRepository = authRepository,
-                onDrawerClose = {
-                    coroutineScope.launch { drawerState.close() }
-                }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .background(Color.White.copy(alpha = 0.9f), shape = RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { /* Trong suốt với sự kiện chạm ở khu vực không có nút */ }
             )
-        },
-        modifier = Modifier.systemBarsPadding()
     ) {
-        Column(
-            modifier = modifier
+        Row(
+            modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.Start
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = onMenuClick,
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Menu,
+                    contentDescription = "Menu",
+                    tint = Color.Black,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = {
-                        coroutineScope.launch { drawerState.open() }
-                    },
+                    onClick = { /* Xử lý tìm kiếm */ },
                     modifier = Modifier
                         .size(32.dp)
                         .background(
@@ -88,69 +85,52 @@ fun TopControlBar(
                         )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Menu,
-                        contentDescription = "Menu",
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
                         tint = Color.Black,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                IconButton(
+                    onClick = { /* Xử lý thông báo */ },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
                 ) {
-                    IconButton(
-                        onClick = { /* Xử lý tìm kiếm */ },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = Color.Black,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { /* Xử lý thông báo */ },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "Notifications",
-                            tint = Color.Black,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "Notifications",
+                        tint = Color.Black,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
-
         }
     }
 }
 
+
+
 @Composable
 fun BottomControlBar(
     navController: NavController,
-    showConnectButton: Boolean = false, // Thêm tham số để điều khiển hiển thị nút Connect
-    isConnected: Boolean = false, // Thêm tham số isConnected với mặc định là false
-    onConnectClick: () -> Unit = {}, // Thêm tham số onConnectClick với mặc định là hàm rỗng
+    showConnectButton: Boolean = false,
+    isConnected: Boolean = false,
+    onConnectClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { /* Trong suốt với sự kiện chạm ở khu vực không có nút */ }
+            ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Nút Connect/Disconnect (chỉ hiển thị nếu showConnectButton = true)
@@ -191,7 +171,6 @@ fun BottomControlBar(
             }
         }
 
-        // Thanh điều hướng dưới cùng
         BottomNavigationBar(
             navController = navController,
             modifier = Modifier
@@ -202,11 +181,14 @@ fun BottomControlBar(
 }
 
 @Composable
-fun BottomNavigationBar(navController: NavController, modifier: Modifier = Modifier) {
+fun BottomNavigationBar(
+    navController: NavController,
+    modifier: Modifier = Modifier
+) {
     val items = listOf(
         "Home" to Icons.Default.Home,
         "Favourite" to Icons.Default.FavoriteBorder,
-        "Wallet" to null, // Drawable riêng
+        "Wallet" to null,
         "Offer" to Icons.Default.LocalOffer,
         "Profile" to Icons.Default.Person
     )
@@ -219,7 +201,11 @@ fun BottomNavigationBar(navController: NavController, modifier: Modifier = Modif
             .height(90.dp)
             .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .background(Color.White)
-//            .navigationBarsPadding() // 👉 Dòng quan trọng nhất!
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { /* Trong suốt với sự kiện chạm ở khu vực không có nút */ }
+            )
     ) {
         Row(
             modifier = Modifier
@@ -233,7 +219,6 @@ fun BottomNavigationBar(navController: NavController, modifier: Modifier = Modif
                 val isSelected = currentRoute == route
 
                 if (title == "Wallet") {
-                    // Wallet: to hơn, sát dưới
                     Box(
                         modifier = Modifier
                             .size(80.dp)

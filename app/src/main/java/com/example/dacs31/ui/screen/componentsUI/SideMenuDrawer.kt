@@ -1,24 +1,30 @@
 package com.example.dacs31.ui.screen.componentsUI
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.dacs31.data.AuthRepository
 import com.example.dacs31.data.User
-
 @Composable
 fun SideMenuDrawer(
     user: User?,
@@ -28,117 +34,128 @@ fun SideMenuDrawer(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxWidth(0.75f)
+            .fillMaxHeight()
+            .width(300.dp)
             .background(Color.White)
-            .systemBarsPadding()
             .padding(16.dp)
     ) {
+        // Thêm nút Back ở góc trên bên trái
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.Start
         ) {
-            Box(
+            IconButton(
+                onClick = { onDrawerClose() },
                 modifier = Modifier
-                    .size(60.dp)
-                    .clip(CircleShape)
-                    .background(Color.LightGray),
-                contentAlignment = Alignment.Center
+                    .size(40.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
             ) {
                 Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = "Profile Picture",
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = user?.fullName ?: "Guest",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = user?.email ?: "email@example.com",
-                    fontSize = 14.sp,
-                    color = Color.Gray
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.Black,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
 
-        Divider(color = Color.LightGray, thickness = 1.dp)
+        // Tiêu đề và thông tin người dùng
+        Text(
+            text = "Menu",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        user?.let {
+            Text(
+                text = it.fullName ?: "User",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Text(
+                text = it.email ?: "No email",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        } ?: Text(
+            text = "Loading user...",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.Gray,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Divider()
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        MenuItem(
+        // Các mục menu
+        DrawerItem(
+            icon = Icons.Default.Home,
+            label = "Home",
+            onClick = {
+                navController.navigate("home") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                }
+                onDrawerClose()
+            }
+        )
+
+        DrawerItem(
+            icon = Icons.Default.FavoriteBorder,
+            label = "Favourite",
+            onClick = {
+                navController.navigate("favourite") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                }
+                onDrawerClose()
+            }
+        )
+
+        DrawerItem(
+            icon = Icons.Default.AccountBalanceWallet,
+            label = "Wallet",
+            onClick = {
+                navController.navigate("wallet") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                }
+                onDrawerClose()
+            }
+        )
+
+        DrawerItem(
+            icon = Icons.Default.LocalOffer,
+            label = "Offer",
+            onClick = {
+                navController.navigate("offer") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                }
+                onDrawerClose()
+            }
+        )
+
+        DrawerItem(
             icon = Icons.Default.Person,
-            title = "Profile",
+            label = "Profile",
             onClick = {
-                navController.navigate("profile")
-                onDrawerClose()
-            }
-        )
-
-        MenuItem(
-            icon = Icons.Default.History,
-            title = "History",
-            onClick = {
-                navController.navigate("history")
-                onDrawerClose()
-            }
-        )
-
-        MenuItem(
-            icon = Icons.Default.ThumbUp,
-            title = "Compliment",
-            onClick = {
-                navController.navigate("compliment")
-                onDrawerClose()
-            }
-        )
-
-        MenuItem(
-            icon = Icons.Default.AccountBalance,
-            title = "Balance",
-            onClick = {
-                navController.navigate("balance")
-                onDrawerClose()
-            }
-        )
-
-        MenuItem(
-            icon = Icons.Default.Info,
-            title = "About Us",
-            onClick = {
-                navController.navigate("about_us")
-                onDrawerClose()
-            }
-        )
-
-        MenuItem(
-            icon = Icons.Default.Settings,
-            title = "Settings",
-            onClick = {
-                navController.navigate("settings")
-                onDrawerClose()
-            }
-        )
-
-        MenuItem(
-            icon = Icons.Default.Help,
-            title = "Help & Support",
-            onClick = {
-                navController.navigate("help_support")
+                navController.navigate("profile") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                }
                 onDrawerClose()
             }
         )
 
         Spacer(modifier = Modifier.weight(1f))
 
-        MenuItem(
+        // Nút đăng xuất
+        DrawerItem(
             icon = Icons.Default.ExitToApp,
-            title = "Logout",
+            label = "Logout",
             onClick = {
                 authRepository.signOut()
                 navController.navigate("signin") {
@@ -147,15 +164,13 @@ fun SideMenuDrawer(
                 onDrawerClose()
             }
         )
-
-
     }
 }
 
 @Composable
-fun MenuItem(
+fun DrawerItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
+    label: String,
     onClick: () -> Unit
 ) {
     Row(
@@ -167,14 +182,14 @@ fun MenuItem(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = title,
-            tint = Color.Black,
-            modifier = Modifier.size(24.dp)
+            contentDescription = label,
+            modifier = Modifier.size(24.dp),
+            tint = Color.Black
         )
         Spacer(modifier = Modifier.width(16.dp))
         Text(
-            text = title,
-            fontSize = 16.sp,
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
             color = Color.Black
         )
     }

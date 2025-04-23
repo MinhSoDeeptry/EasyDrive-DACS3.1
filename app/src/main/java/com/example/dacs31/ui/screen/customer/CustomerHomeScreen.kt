@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,12 +26,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
 import com.example.dacs31.R
 import com.example.dacs31.data.AuthRepository
+import com.example.dacs31.data.User
 import com.example.dacs31.map.MapComponent
 import com.example.dacs31.ui.screen.WaitingScreen
 import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
+import com.example.dacs31.ui.screen.componentsUI.SideMenuDrawer
 import com.example.dacs31.ui.screen.componentsUI.TopControlBar
 import com.example.dacs31.ui.screen.location.RouteInfoDialog
 import com.example.dacs31.ui.screen.location.SelectAddressDialog
@@ -79,15 +83,18 @@ fun CustomerHomeScreen(
     var driverLocation by remember { mutableStateOf<Point?>(null) }
     var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
     var isPending by remember { mutableStateOf(false) }
-    var isDrawerOpen by remember { mutableStateOf(false) } // Thêm trạng thái drawer
-
     var selectedMode by remember { mutableStateOf("Transport") }
+    var isDrawerOpen by remember { mutableStateOf(false) }
 
     val mapboxAccessToken = context.getString(R.string.mapbox_access_token)
     val coroutineScope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     val db = Firebase.firestore
     val requestsCollection = db.collection("requests")
+
+    // State để lưu thông tin người dùng cho drawer
+    var currentUser by remember { mutableStateOf<User?>(null) }
 
     // Lấy customerId và kiểm tra vai trò
     LaunchedEffect(Unit) {
@@ -113,13 +120,15 @@ fun CustomerHomeScreen(
                     popUpTo(navController.graph.startDestinationId) { inclusive = true }
                 }
             }
-            return@LaunchedEffect
+             return@LaunchedEffect
         }
 
         customerId = user.uid
+        currentUser = user // Lưu user cho drawer
         Log.d("CustomerHomeScreen", "Customer ID: $customerId")
     }
 
+    // Đợi customerId được gán trước khi tiếp tục
     if (customerId == null) {
         Log.d("CustomerHomeScreen", "Đang chờ customerId, hiển thị loading")
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -439,239 +448,278 @@ fun CustomerHomeScreen(
         }
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        MapComponent(
-            modifier = Modifier.fillMaxSize(),
-            routePoints = routePoints,
-            fromPoint = fromPoint,
-            toPoint = toPoint,
-            driverLocation = driverLocation,
-            userLocation = userLocation,
-            onUserLocationUpdated = { point ->
-                userLocation = point
-                Log.d("CustomerHomeScreen", "User location updated: $userLocation")
-            },
-            onMapReady = { mapView, pointAnnotationManager ->
-                Log.d("CustomerHomeScreen", "Map is ready")
-            },
-            onMapViewReady = { mapView ->
-                mapViewInstance = mapView
-            }
-        )
-
-        LaunchedEffect(userLocation) {
-            userLocation?.let { point ->
-                mapViewInstance?.getMapboxMap()?.setCamera(
-                    CameraOptions.Builder()
-                        .center(point)
-                        .zoom(15.0)
-                        .build()
-                )
-                Log.d("CustomerHomeScreen", "Camera moved to user location: $point")
-            }
-        }
-
-        TopControlBar(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .align(Alignment.TopCenter),
-            navController = navController,
-            authRepository = authRepository,
-            onDrawerStateChange = { isOpen ->
-                isDrawerOpen = isOpen
-            }
-        )
-
-        FloatingActionButton(
-            onClick = {
-                userLocation?.let { point ->
-                    driverLocation?.let { driver ->
-                        val points = listOf(point, driver)
-                        val bounds = TurfMeasurement.bbox(LineString.fromLngLats(points))
-                        mapViewInstance?.getMapboxMap()?.setCamera(
-                            CameraOptions.Builder()
-                                .center(Point.fromLngLat((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2))
-                                .zoom(12.0)
-                                .build()
-                        )
-                        Log.d("CustomerHomeScreen", "Moved camera to show user and driver")
-                    } ?: run {
-                        mapViewInstance?.getMapboxMap()?.setCamera(
-                            CameraOptions.Builder()
-                                .center(point)
-                                .zoom(15.0)
-                                .build()
-                        )
-                        Log.d("CustomerHomeScreen", "Moved camera to user location: $point")
-                    }
-                } ?: run {
-                    Log.w("CustomerHomeScreen", "User location is null")
-                    showPermissionDeniedDialog = true
+    // Thêm ModalNavigationDrawer để hiển thị menu
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            Log.d("CustomerHomeScreen", "Drawer content is being composed")
+            Log.d("CustomerHomeScreen", "User data for drawer: $currentUser")
+            SideMenuDrawer(
+                user = currentUser,
+                navController = navController,
+                authRepository = authRepository,
+                onDrawerClose = {
+                    coroutineScope.launch { drawerState.close() }
+                    isDrawerOpen = false
                 }
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(bottom = if (showRouteInfoDialog) 150.dp else 16.dp, end = 16.dp),
-            shape = CircleShape,
-            containerColor = Color.White,
-            contentColor = Color.Black
-        ) {
-            Icon(
-                imageVector = Icons.Default.MyLocation,
-                contentDescription = "My Location"
             )
-        }
+        },
+        modifier = Modifier.fillMaxSize(),
+        gesturesEnabled = false // Tắt vuốt để mở drawer, chỉ mở bằng nút
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            MapComponent(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(0f), // Lớp thấp nhất để không che khuất giao diện
+                routePoints = routePoints,
+                fromPoint = fromPoint,
+                toPoint = toPoint,
+                driverLocation = driverLocation,
+                userLocation = userLocation,
+                onUserLocationUpdated = { point ->
+                    userLocation = point
+                    Log.d("CustomerHomeScreen", "User location updated: $userLocation")
+                },
+                onMapReady = { mapView, pointAnnotationManager ->
+                    Log.d("CustomerHomeScreen", "Map is ready")
+                },
+                onMapViewReady = { mapView ->
+                    mapViewInstance = mapView
+                }
+            )
 
-        if (!isDrawerOpen) { // Ẩn BottomControlBar khi drawer mở
+            LaunchedEffect(userLocation) {
+                userLocation?.let { point ->
+                    mapViewInstance?.getMapboxMap()?.setCamera(
+                        CameraOptions.Builder()
+                            .center(point)
+                            .zoom(15.0)
+                            .build()
+                    )
+                    Log.d("CustomerHomeScreen", "Camera moved to user location: $point")
+                }
+            }
+
+            TopControlBar(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                    .align(Alignment.TopCenter)
+                    .zIndex(2f), // Hiển thị lên trên bản đồ
+                onMenuClick = {
+                    Log.d("CustomerHomeScreen", "Menu button clicked, isDrawerOpen: $isDrawerOpen")
+                    coroutineScope.launch {
+                        if (drawerState.isOpen) {
+                            drawerState.close()
+                            isDrawerOpen = false
+                            Log.d("CustomerHomeScreen", "Drawer closed")
+                        } else {
+                            drawerState.open()
+                            isDrawerOpen = true
+                            Log.d("CustomerHomeScreen", "Drawer opened")
+                        }
+                    }
+                }
+            )
+
             BottomControlBar(
                 navController = navController,
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
+                    .zIndex(2f) // Hiển thị lên trên bản đồ
             )
-        }
 
-        if (showRouteInfoDialog) {
-            RouteInfoDialog(
-                fromAddress = fromAddress,
-                toAddress = toAddress,
-                distance = routeDistance,
-                onDismiss = {
-                    showRouteInfoDialog = false
-                    showSelectTransportDialog = true
-                    Log.d("CustomerHomeScreen", "RouteInfoDialog dismissed, opening SelectTransportScreen")
+            FloatingActionButton(
+                onClick = {
+                    userLocation?.let { point ->
+                        driverLocation?.let { driver ->
+                            val points = listOf(point, driver)
+                            val bounds = TurfMeasurement.bbox(LineString.fromLngLats(points))
+                            mapViewInstance?.getMapboxMap()?.setCamera(
+                                CameraOptions.Builder()
+                                    .center(Point.fromLngLat((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2))
+                                    .zoom(12.0)
+                                    .build()
+                            )
+                            Log.d("CustomerHomeScreen", "Moved camera to show user and driver")
+                        } ?: run {
+                            mapViewInstance?.getMapboxMap()?.setCamera(
+                                CameraOptions.Builder()
+                                    .center(point)
+                                    .zoom(15.0)
+                                    .build()
+                            )
+                            Log.d("CustomerHomeScreen", "Moved camera to user location: $point")
+                        }
+                    } ?: run {
+                        Log.w("CustomerHomeScreen", "User location is null")
+                        showPermissionDeniedDialog = true
+                    }
                 },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight()
-                    .align(Alignment.BottomCenter)
-            )
-        }
-
-        if (!showRouteInfoDialog && !isDrawerOpen) { // Ẩn Column khi drawer mở hoặc RouteInfoDialog hiển thị
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 100.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = if (showRouteInfoDialog) 150.dp else 16.dp, end = 16.dp)
+                    .zIndex(2f), // Hiển thị lên trên bản đồ
+                shape = CircleShape,
+                containerColor = Color.White,
+                contentColor = Color.Black
             ) {
-                Button(
-                    onClick = { /* TODO: Xử lý khi nhấn Rental */ },
-                    modifier = Modifier
-                        .width(172.dp)
-                        .height(54.dp)
-                        .padding(start = 15.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFEDAE10)
-                    ),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = "Rental",
-                        color = Color.Black,
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 23.sp
-                        )
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = "My Location"
+                )
+            }
 
-                Box(
+            if (showRouteInfoDialog) {
+                RouteInfoDialog(
+                    fromAddress = fromAddress,
+                    toAddress = toAddress,
+                    distance = routeDistance,
+                    onDismiss = {
+                        showRouteInfoDialog = false
+                        showSelectTransportDialog = true
+                        Log.d("CustomerHomeScreen", "RouteInfoDialog dismissed, opening SelectTransportScreen")
+                    },
                     modifier = Modifier
-                        .width(336.dp)
-                        .height(48.dp)
-                        .padding(horizontal = 28.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFFFFBE7))
-                        .border(
-                            BorderStroke(2.dp, Color(0xFFF3BD06)),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { showSelectAddressDialog = true }
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .align(Alignment.BottomCenter)
+                        .zIndex(2f) // Hiển thị lên trên bản đồ
+                )
+            }
+
+            if (!showRouteInfoDialog && !isDrawerOpen) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp)
+                        .zIndex(2f) // Hiển thị lên trên bản đồ
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { /* Trong suốt với sự kiện chạm ở khu vực không có nút */ }
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Button(
+                        onClick = { /* TODO: Xử lý khi nhấn Rental */ },
+                        modifier = Modifier
+                            .width(172.dp)
+                            .height(54.dp)
+                            .padding(start = 15.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFEDAE10)
+                        ),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            text = "Rental",
+                            color = Color.Black,
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                lineHeight = 23.sp
+                            )
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .width(336.dp)
+                            .height(48.dp)
+                            .padding(horizontal = 28.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFFFFBE7))
+                            .border(
+                                BorderStroke(2.dp, Color(0xFFF3BD06)),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .clickable { showSelectAddressDialog = true }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Where would you go?",
+                                color = Color.Gray,
+                                style = TextStyle(
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    lineHeight = 23.sp
+                                )
+                            )
+                            Icon(
+                                imageVector = Icons.Default.FavoriteBorder,
+                                contentDescription = "Favorite",
+                                tint = Color.Gray
+                            )
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Where would you go?",
-                            color = Color.Gray,
-                            style = TextStyle(
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                lineHeight = 23.sp
+                            .width(336.dp)
+                            .height(48.dp)
+                            .padding(horizontal = 28.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFFFFBE7))
+                            .border(
+                                BorderStroke(2.dp, Color(0xFFF3BD06)),
+                                RoundedCornerShape(8.dp)
                             )
-                        )
-                        Icon(
-                            imageVector = Icons.Default.FavoriteBorder,
-                            contentDescription = "Favorite",
-                            tint = Color.Gray
-                        )
-                    }
-                }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .background(
+                                    if (selectedMode == "Transport") Color(0xFFEDAE10) else Color(0xFFFFFBE7)
+                                )
+                                .clickable { selectedMode = "Transport" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Transport",
+                                color = if (selectedMode == "Transport") Color.White else Color(0xFF414141),
+                                style = TextStyle(
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    lineHeight = 23.sp
+                                )
+                            )
+                        }
 
-                Row(
-                    modifier = Modifier
-                        .width(336.dp)
-                        .height(48.dp)
-                        .padding(horizontal = 28.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFFFFBE7))
-                        .border(
-                            BorderStroke(2.dp, Color(0xFFF3BD06)),
-                            RoundedCornerShape(8.dp)
-                        )
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .background(
-                                if (selectedMode == "Transport") Color(0xFFEDAE10) else Color(0xFFFFFBE7)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .background(
+                                    if (selectedMode == "Delivery") Color(0xFFEDAE10) else Color(0xFFFFFBE7)
+                                )
+                                .clickable { selectedMode = "Delivery" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Delivery",
+                                color = if (selectedMode == "Delivery") Color.White else Color(0xFF414141),
+                                style = TextStyle(
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    lineHeight = 23.sp
+                                )
                             )
-                            .clickable { selectedMode = "Transport" },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Transport",
-                            color = if (selectedMode == "Transport") Color.White else Color(0xFF414141),
-                            style = TextStyle(
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                lineHeight = 23.sp
-                            )
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .background(
-                                if (selectedMode == "Delivery") Color(0xFFEDAE10) else Color(0xFFFFFBE7)
-                            )
-                            .clickable { selectedMode = "Delivery" },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Delivery",
-                            color = if (selectedMode == "Delivery") Color.White else Color(0xFF414141),
-                            style = TextStyle(
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                lineHeight = 23.sp
-                            )
-                        )
+                        }
                     }
                 }
             }

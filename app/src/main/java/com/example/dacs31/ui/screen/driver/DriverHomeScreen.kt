@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,22 +26,22 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
 import com.example.dacs31.R
 import com.example.dacs31.data.AuthRepository
 import com.example.dacs31.map.MapComponent
 import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
+import com.example.dacs31.ui.screen.componentsUI.SideMenuDrawer
 import com.example.dacs31.ui.screen.componentsUI.TopControlBar
 import com.example.dacs31.ui.screen.location.SelectAddressDialog
 import com.example.dacs31.ui.screen.location.getRoute
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.firestore.ListenerRegistration
-import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
-import com.mapbox.turf.TurfMeasurement
 import kotlinx.coroutines.launch
 
 @Composable
@@ -50,6 +51,7 @@ fun DriverHomeScreen(
 ) {
     val context = LocalContext.current
     var driverId by remember { mutableStateOf<String?>(null) }
+    var user by remember { mutableStateOf<com.example.dacs31.data.User?>(null) }
     var userLocation by remember { mutableStateOf<Point?>(null) }
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -59,11 +61,12 @@ fun DriverHomeScreen(
     var fromPoint by remember { mutableStateOf<Point?>(null) }
     var toPoint by remember { mutableStateOf<Point?>(null) }
     var routePoints by remember { mutableStateOf<List<Point>>(emptyList()) }
-    var showSelectAddressDialog by remember { mutableStateOf(false) } // Thêm trạng thái cho dialog chọn địa chỉ
-    var isDrawerOpen by remember { mutableStateOf(false) } // Thêm trạng thái drawer
-    var selectedMode by remember { mutableStateOf("Transport") } // Thêm trạng thái cho nút Transport/Delivery
+    var showSelectAddressDialog by remember { mutableStateOf(false) }
+    var isDrawerOpen by remember { mutableStateOf(false) }
+    var selectedMode by remember { mutableStateOf("Transport") }
     val mapboxAccessToken = context.getString(R.string.mapbox_access_token)
     val coroutineScope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     // Firestore
     val db = Firebase.firestore
@@ -72,21 +75,22 @@ fun DriverHomeScreen(
 
     // Lấy driverId và kiểm tra vai trò
     LaunchedEffect(Unit) {
-        val user = authRepository.getCurrentUser()
-        if (user == null || user.role != "Driver") {
-            Log.e("DriverHomeScreen", "Người dùng không phải tài xế, vai trò: ${user?.role}")
+        val currentUser = authRepository.getCurrentUser()
+        user = currentUser
+        if (currentUser == null || currentUser.role != "Driver") {
+            Log.e("DriverHomeScreen", "Người dùng không phải tài xế, vai trò: ${currentUser?.role}")
             errorMessage = "Vui lòng đăng nhập với tài khoản tài xế."
             navController.navigate("signin") {
                 popUpTo(navController.graph.startDestinationId) { inclusive = true }
             }
             return@LaunchedEffect
         }
-        driverId = user.uid
+        driverId = currentUser.uid
         Log.d("DriverHomeScreen", "Driver ID: $driverId")
     }
 
     if (driverId == null) {
-        Log.d("DriverHomeScreen", "Đang chờ driverId, hiển thị loading")
+        Log.d("DriverHomeScreen", "Đang chờ driver [<xaiArtifact/>](https://xaiartifact.com/)Id, hiển thị loading")
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
@@ -485,249 +489,296 @@ fun DriverHomeScreen(
         )
     }
 
-    // Giao diện chính
-    Box(
-        modifier = Modifier.fillMaxSize()
+    // Giao diện chính với Drawer
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            SideMenuDrawer(
+                user = user,
+                navController = navController,
+                authRepository = authRepository,
+                onDrawerClose = {
+                    coroutineScope.launch { drawerState.close() }
+                    isDrawerOpen = false
+                }
+            )
+        },
+        modifier = Modifier.fillMaxSize(),
+        gesturesEnabled = false // Tắt vuốt để mở drawer, chỉ mở bằng nút
     ) {
-        var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
 
-        MapComponent(
-            modifier = Modifier.fillMaxSize(),
-            routePoints = routePoints,
-            fromPoint = fromPoint,
-            toPoint = toPoint,
-            userLocation = userLocation,
-            onUserLocationUpdated = { point ->
-                userLocation = point
-                Log.d("DriverHomeScreen", "Driver location updated: $userLocation")
-            },
-            onMapReady = { mapView, pointAnnotationManager ->
-                Log.d("DriverHomeScreen", "Map is ready")
-            },
-            onMapViewReady = { mapView ->
-                mapViewInstance = mapView
-                Log.d("DriverHomeScreen", "MapView sẵn sàng")
-            }
-        )
+            // Đặt MapComponent ở lớp thấp nhất để không che khuất giao diện
+            MapComponent(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(0f), // Lớp thấp nhất để không che khuất giao diện
+                routePoints = routePoints,
+                fromPoint = fromPoint,
+                toPoint = toPoint,
+                userLocation = userLocation,
+                onUserLocationUpdated = { point ->
+                    userLocation = point
+                    Log.d("DriverHomeScreen", "Driver location updated: $userLocation")
+                },
+                onMapReady = { mapView, pointAnnotationManager ->
+                    Log.d("DriverHomeScreen", "Map is ready")
+                },
+                onMapViewReady = { mapView ->
+                    mapViewInstance = mapView
+                    Log.d("DriverHomeScreen", "MapView sẵn sàng")
+                }
+            )
 
-        LaunchedEffect(userLocation) {
-            if (userLocation != null) {
-                mapViewInstance?.getMapboxMap()?.setCamera(
-                    CameraOptions.Builder()
-                        .center(userLocation)
-                        .zoom(15.0)
-                        .build()
-                )
-                Log.d("DriverHomeScreen", "Camera moved to user location: $userLocation")
-            } else {
-                Log.w("DriverHomeScreen", "userLocation là null, không thể di chuyển camera")
-            }
-        }
-
-        TopControlBar(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .align(Alignment.TopCenter),
-            navController = navController,
-            authRepository = authRepository,
-            onDrawerStateChange = { isOpen ->
-                isDrawerOpen = isOpen
-            }
-        )
-
-        // Nút My Location
-        FloatingActionButton(
-            onClick = {
-                userLocation?.let { point ->
+            LaunchedEffect(userLocation) {
+                if (userLocation != null) {
                     mapViewInstance?.getMapboxMap()?.setCamera(
                         CameraOptions.Builder()
-                            .center(point)
+                            .center(userLocation)
                             .zoom(15.0)
                             .build()
                     )
-                    Log.d("DriverHomeScreen", "Moved camera to user location: $point")
-                } ?: run {
-                    Log.w("DriverHomeScreen", "User location is null")
-                    showPermissionDeniedDialog = true
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(bottom = 16.dp, end = 16.dp),
-            shape = CircleShape,
-            containerColor = Color.White,
-            contentColor = Color.Black
-        ) {
-            Icon(
-                imageVector = Icons.Default.MyLocation,
-                contentDescription = "My Location"
-            )
-        }
-
-        // Thêm thông báo trạng thái khi không có yêu cầu
-        if (!isDrawerOpen) {
-            if (!isConnected && selectedRequest == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                        .align(Alignment.Center),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Bạn hiện đang offline. Kết nối để nhận yêu cầu đặt xe.",
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-            } else if (isConnected && incomingRequest == null && selectedRequest == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                        .align(Alignment.Center),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Đang chờ yêu cầu đặt xe...",
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    Log.d("DriverHomeScreen", "Camera moved to user location: $userLocation")
+                } else {
+                    Log.w("DriverHomeScreen", "userLocation là null, không thể di chuyển camera")
                 }
             }
-        }
 
-        if (!isDrawerOpen) {
-            Column(
+            // TopControlBar
+            TopControlBar(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .align(Alignment.BottomCenter),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                if (selectedRequest != null) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp)),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Chuyến đi đang thực hiện",
-                            style = TextStyle(
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            modifier = Modifier.padding(8.dp)
-                        )
-                        Text(
-                            text = "Điểm đón: (${selectedRequest!!.pickupLocation.latitude()}, ${selectedRequest!!.pickupLocation.longitude()})",
-                            modifier = Modifier.padding(4.dp)
-                        )
-                        Text(
-                            text = "Điểm đến: (${selectedRequest!!.destination.latitude()}, ${selectedRequest!!.destination.longitude()})",
-                            modifier = Modifier.padding(4.dp)
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Button(
-                                onClick = {
-                                    requestsCollection.document(selectedRequest!!.id)
-                                        .update("status", "completed")
-                                        .addOnSuccessListener {
-                                            selectedRequest = null
-                                            fromPoint = null
-                                            toPoint = null
-                                            routePoints = emptyList()
-                                            Log.d("Firestore", "Hoàn thành chuyến đi")
-                                        }
-                                        .addOnFailureListener { e ->
-                                            Log.e("Firestore", "Hoàn thành chuyến đi thất bại: ${e.message}")
-                                            errorMessage = "Không thể hoàn thành chuyến đi: ${e.message}"
-                                        }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) {
-                                Text("Hoàn thành chuyến đi")
-                            }
-                            Button(
-                                onClick = {
-                                    requestsCollection.document(selectedRequest!!.id)
-                                        .update("status", "canceled")
-                                        .addOnSuccessListener {
-                                            selectedRequest = null
-                                            fromPoint = null
-                                            toPoint = null
-                                            routePoints = emptyList()
-                                            Log.d("Firestore", "Hủy chuyến đi")
-                                        }
-                                        .addOnFailureListener { e ->
-                                            Log.e("Firestore", "Hủy chuyến đi thất bại: ${e.message}")
-                                            errorMessage = "Không thể hủy chuyến đi: ${e.message}"
-                                        }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) {
-                                Text("Hủy chuyến")
-                            }
+                    .wrapContentHeight()
+                    .align(Alignment.TopCenter)
+                    .zIndex(2f), // Hiển thị lên trên bản đồ
+                onMenuClick = {
+                    coroutineScope.launch {
+                        if (drawerState.isOpen) {
+                            drawerState.close()
+                            isDrawerOpen = false
+                        } else {
+                            drawerState.open()
+                            isDrawerOpen = true
                         }
                     }
                 }
+            )
 
-                BottomControlBar(
-                    navController = navController,
-                    showConnectButton = true,
-                    isConnected = isConnected,
-                    onConnectClick = {
-                        isConnected = !isConnected
-                        val driverDocRef = db.collection("drivers").document(driverId!!)
-                        driverDocRef.get()
-                            .addOnSuccessListener { document ->
-                                if (document.exists()) {
-                                    driverDocRef.update("isConnected", isConnected)
-                                        .addOnSuccessListener {
-                                            Log.d("Firestore", "Cập nhật trạng thái isConnected thành công: $isConnected")
-                                        }
-                                        .addOnFailureListener { e ->
-                                            Log.e("Firestore", "Cập nhật trạng thái thất bại: ${e.message}")
-                                            errorMessage = "Cập nhật trạng thái thất bại: ${e.message}"
-                                        }
-                                } else {
-                                    driverDocRef.set(
-                                        mapOf(
-                                            "location" to mapOf("latitude" to 0.0, "longitude" to 0.0),
-                                            "isConnected" to isConnected,
-                                            "createdAt" to com.google.firebase.Timestamp.now()
-                                        )
-                                    )
-                                        .addOnSuccessListener {
-                                            Log.d("Firestore", "Tạo tài liệu tài xế thành công")
-                                        }
-                                        .addOnFailureListener { e ->
-                                            Log.e("Firestore", "Tạo tài liệu tài xế thất bại: ${e.message}")
-                                            errorMessage = "Tạo tài liệu tài xế thất bại: ${e.message}"
-                                        }
+            // Nút My Location
+            FloatingActionButton(
+                onClick = {
+                    userLocation?.let { point ->
+                        mapViewInstance?.getMapboxMap()?.setCamera(
+                            CameraOptions.Builder()
+                                .center(point)
+                                .zoom(15.0)
+                                .build()
+                        )
+                        Log.d("DriverHomeScreen", "Moved camera to user location: $point")
+                    } ?: run {
+                        Log.w("DriverHomeScreen", "User location is null")
+                        showPermissionDeniedDialog = true
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 16.dp, end = 16.dp)
+                    .zIndex(2f), // Hiển thị lên trên bản đồ
+                shape = CircleShape,
+                containerColor = Color.White,
+                contentColor = Color.Black
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = "My Location"
+                )
+            }
+
+            // Thêm thông báo trạng thái khi không có yêu cầu
+            if (!isDrawerOpen) {
+                if (!isConnected && selectedRequest == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight()
+                            .padding(16.dp)
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                            .align(Alignment.Center)
+                            .zIndex(2f) // Hiển thị lên trên bản đồ
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { /* Không xử lý sự kiện chạm, để sự kiện xuyên qua bản đồ */ }
+                            )
+                    ) {
+                        Text(
+                            text = "Bạn hiện đang offline. Kết nối để nhận yêu cầu đặt xe.",
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                } else if (isConnected && incomingRequest == null && selectedRequest == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight()
+                            .padding(16.dp)
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                            .align(Alignment.Center)
+                            .zIndex(2f) // Hiển thị lên trên bản đồ
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { /* Không xử lý sự kiện chạm, để sự kiện xuyên qua bản đồ */ }
+                            )
+                    ) {
+                        Text(
+                            text = "Đang chờ yêu cầu đặt xe...",
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                }
+            }
+
+            // Khu vực Bottom (bao gồm các nút và BottomControlBar)
+            if (!isDrawerOpen) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .align(Alignment.BottomCenter)
+                        .zIndex(2f), // Hiển thị lên trên bản đồ
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (selectedRequest != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp)),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Chuyến đi đang thực hiện",
+                                style = TextStyle(
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                modifier = Modifier.padding(8.dp)
+                            )
+                            Text(
+                                text = "Điểm đón: (${selectedRequest!!.pickupLocation.latitude()}, ${selectedRequest!!.pickupLocation.longitude()})",
+                                modifier = Modifier.padding(4.dp)
+                            )
+                            Text(
+                                text = "Điểm đến: (${selectedRequest!!.destination.latitude()}, ${selectedRequest!!.destination.longitude()})",
+                                modifier = Modifier.padding(4.dp)
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Button(
+                                    onClick = {
+                                        requestsCollection.document(selectedRequest!!.id)
+                                            .update("status", "completed")
+                                            .addOnSuccessListener {
+                                                selectedRequest = null
+                                                fromPoint = null
+                                                toPoint = null
+                                                routePoints = emptyList()
+                                                Log.d("Firestore", "Hoàn thành chuyến đi")
+                                            }
+                                            .addOnFailureListener { e ->
+                                                Log.e("Firestore", "Hoàn thành chuyến đi thất bại: ${e.message}")
+                                                errorMessage = "Không thể hoàn thành chuyến đi: ${e.message}"
+                                            }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Text("Hoàn thành chuyến đi")
+                                }
+                                Button(
+                                    onClick = {
+                                        requestsCollection.document(selectedRequest!!.id)
+                                            .update("status", "canceled")
+                                            .addOnSuccessListener {
+                                                selectedRequest = null
+                                                fromPoint = null
+                                                toPoint = null
+                                                routePoints = emptyList()
+                                                Log.d("Firestore", "Hủy chuyến đi")
+                                            }
+                                            .addOnFailureListener { e ->
+                                                Log.e("Firestore", "Hủy chuyến đi thất bại: ${e.message}")
+                                                errorMessage = "Không thể hủy chuyến đi: ${e.message}"
+                                            }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("Hủy chuyến")
                                 }
                             }
-                            .addOnFailureListener { e ->
-                                Log.e("Firestore", "Lỗi khi kiểm tra tài liệu: ${e.message}")
-                                errorMessage = "Lỗi khi kiểm tra tài liệu: ${e.message}"
-                            }
+                        }
                     }
-                )
+
+                    BottomControlBar(
+                        navController = navController,
+                        showConnectButton = true,
+                        isConnected = isConnected,
+                        onConnectClick = {
+                            isConnected = !isConnected
+                            val driverDocRef = db.collection("drivers").document(driverId!!)
+                            driverDocRef.get()
+                                .addOnSuccessListener { document ->
+                                    if (document.exists()) {
+                                        driverDocRef.update("isConnected", isConnected)
+                                            .addOnSuccessListener {
+                                                Log.d("Firestore", "Cập nhật trạng thái isConnected thành công: $isConnected")
+                                            }
+                                            .addOnFailureListener { e ->
+                                                Log.e("Firestore", "Cập nhật trạng thái thất bại: ${e.message}")
+                                                errorMessage = "Cập nhật trạng thái thất bại: ${e.message}"
+                                            }
+                                    } else {
+                                        driverDocRef.set(
+                                            mapOf(
+                                                "location" to mapOf("latitude" to 0.0, "longitude" to 0.0),
+                                                "isConnected" to isConnected,
+                                                "createdAt" to com.google.firebase.Timestamp.now()
+                                            )
+                                        )
+                                            .addOnSuccessListener {
+                                                Log.d("Firestore", "Tạo tài liệu tài xế thành công")
+                                            }
+                                            .addOnFailureListener { e ->
+                                                Log.e("Firestore", "Tạo tài liệu tài xế thất bại: ${e.message}")
+                                                errorMessage = "Tạo tài liệu tài xế thất bại: ${e.message}"
+                                            }
+                                    }
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("Firestore", "Lỗi khi kiểm tra tài liệu: ${e.message}")
+                                    errorMessage = "Lỗi khi kiểm tra tài liệu: ${e.message}"
+                                }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight()
+                    )
+                }
             }
         }
     }
