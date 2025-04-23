@@ -54,6 +54,7 @@ fun CustomerHomeScreen(
     authRepository: AuthRepository
 ) {
     val context = LocalContext.current
+    var customerId by remember { mutableStateOf<String?>(null) }
     var userLocation by remember { mutableStateOf<Point?>(null) }
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
     var showSelectAddressDialog by remember { mutableStateOf(false) }
@@ -62,7 +63,9 @@ fun CustomerHomeScreen(
     var showPaymentScreen by remember { mutableStateOf(false) }
     var showDriverAcceptedDialog by remember { mutableStateOf(false) }
     var showRequestCanceledDialog by remember { mutableStateOf(false) }
+    var showTripCompletedDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isSendingRequest by remember { mutableStateOf(false) }
 
     var routePoints by remember { mutableStateOf<List<Point>>(emptyList()) }
     var fromPoint by remember { mutableStateOf<Point?>(null) }
@@ -79,12 +82,51 @@ fun CustomerHomeScreen(
 
     var selectedMode by remember { mutableStateOf("Transport") }
 
-    val customerId = authRepository.getCurrentUser()?.uid
     val mapboxAccessToken = context.getString(R.string.mapbox_access_token)
     val coroutineScope = rememberCoroutineScope()
 
     val db = Firebase.firestore
     val requestsCollection = db.collection("requests")
+
+    // Lấy customerId và kiểm tra vai trò
+    LaunchedEffect(Unit) {
+        val user = authRepository.getCurrentUser()
+        if (user == null) {
+            Log.d("CustomerHomeScreen", "Người dùng chưa đăng nhập, điều hướng đến màn hình đăng nhập")
+            errorMessage = "Vui lòng đăng nhập để tiếp tục."
+            navController.navigate("signin") {
+                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            }
+            return@LaunchedEffect
+        }
+
+        if (user.role != "Customer") {
+            Log.d("CustomerHomeScreen", "Người dùng không phải khách hàng, vai trò: ${user.role}")
+            errorMessage = "Vui lòng đăng nhập với tài khoản khách hàng."
+            if (user.role == "driver") {
+                navController.navigate("driver_home") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                }
+            } else {
+                navController.navigate("signin") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                }
+            }
+            return@LaunchedEffect
+        }
+
+        customerId = user.uid
+        Log.d("CustomerHomeScreen", "Customer ID: $customerId")
+    }
+
+    // Đợi customerId được gán trước khi tiếp tục
+    if (customerId == null) {
+        Log.d("CustomerHomeScreen", "Đang chờ customerId, hiển thị loading")
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
 
     LaunchedEffect(Unit) {
         val testDocRef = db.collection("test").document("test_message")
@@ -109,7 +151,6 @@ fun CustomerHomeScreen(
         locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
-    // If the state is pending, show WaitingScreen
     if (isPending && currentRequestId != null) {
         WaitingScreen(
             userLocation = userLocation,
@@ -164,6 +205,19 @@ fun CustomerHomeScreen(
             text = { Text("Yêu cầu của bạn đã bị hủy. Vui lòng đặt lại chuyến đi.") },
             confirmButton = {
                 TextButton(onClick = { showRequestCanceledDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    if (showTripCompletedDialog) {
+        AlertDialog(
+            onDismissRequest = { showTripCompletedDialog = false },
+            title = { Text("Chuyến đi hoàn thành") },
+            text = { Text("Chuyến đi của bạn đã hoàn thành thành công!") },
+            confirmButton = {
+                TextButton(onClick = { showTripCompletedDialog = false }) {
                     Text("OK")
                 }
             }
@@ -232,6 +286,17 @@ fun CustomerHomeScreen(
     }
 
     if (showPaymentScreen) {
+        if (isSendingRequest) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
         PaymentScreen(
             selectedTransport = selectedTransport ?: "Car",
             routeDistance = routeDistance,
@@ -240,18 +305,13 @@ fun CustomerHomeScreen(
                 Log.d("CustomerHomeScreen", "PaymentScreen dismissed")
             },
             onConfirmRide = {
-                if (customerId == null) {
-                    errorMessage = "Vui lòng đăng nhập để đặt xe."
-                    showPaymentScreen = false
-                    navController.navigate("signin")
-                    return@PaymentScreen
-                }
-
                 if (fromPoint == null || toPoint == null) {
                     errorMessage = "Điểm đi hoặc điểm đến không hợp lệ. Vui lòng thử lại."
                     showPaymentScreen = false
                     return@PaymentScreen
                 }
+
+                isSendingRequest = true
 
                 val requestData = mapOf(
                     "customerId" to customerId,
@@ -274,11 +334,13 @@ fun CustomerHomeScreen(
                         val requestId = documentReference.id
                         Log.d("Firestore", "Gửi yêu cầu đặt xe thành công, requestId: $requestId")
                         currentRequestId = requestId
-                        isPending = true // Chuyển thẳng sang trạng thái pending
+                        isPending = true
+                        isSendingRequest = false
                     }
                     .addOnFailureListener { e ->
                         Log.e("Firestore", "Gửi yêu cầu thất bại: ${e.message}")
                         errorMessage = "Không thể gửi yêu cầu: ${e.message}. Vui lòng thử lại."
+                        isSendingRequest = false
                     }
 
                 showPaymentScreen = false
@@ -322,10 +384,22 @@ fun CustomerHomeScreen(
                                 driverLocation = null
                             }
                             "completed" -> {
-                                requestsCollection.document(requestId).delete()
-                                currentRequestId = null
-                                driverId = null
-                                driverLocation = null
+                                requestsCollection.document(requestId).get()
+                                    .addOnSuccessListener { document ->
+                                        if (document.exists()) {
+                                            requestsCollection.document(requestId).delete()
+                                        }
+                                        currentRequestId = null
+                                        driverId = null
+                                        driverLocation = null
+                                        showTripCompletedDialog = true
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Log.e("Firestore", "Lỗi khi kiểm tra tài liệu: ${e.message}")
+                                        currentRequestId = null
+                                        driverId = null
+                                        driverLocation = null
+                                    }
                             }
                         }
                     }

@@ -1,11 +1,13 @@
 package com.example.dacs31.ui.screen
 
-import androidx.compose.foundation.background
+import android.util.Log
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
@@ -14,199 +16,356 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.text.input.TextFieldValue
+import com.example.dacs31.R
+import com.example.dacs31.data.AuthRepository
+import com.example.dacs31.data.User
+import com.example.dacs31.ui.screen.componentsUI.BottomControlBar
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
+import kotlinx.coroutines.launch
 
 @Composable
-fun ProfileScreen(navController: NavController? = null) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(16.dp))
+fun ProfileScreen(
+    navController: NavController,
+    authRepository: AuthRepository
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        val coroutineScope = rememberCoroutineScope()
+        var user by remember { mutableStateOf<User?>(null) }
+        var fullName by remember { mutableStateOf("") }
+        var email by remember { mutableStateOf("") }
+        var mobileNumber by remember { mutableStateOf("") }
+        var gender by remember { mutableStateOf("") }
+        var address by remember { mutableStateOf("") }
+        var errorMessage by remember { mutableStateOf<String?>(null) }
+        var isLoading by remember { mutableStateOf(true) }
+        var isUpdating by remember { mutableStateOf(false) }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { navController?.popBackStack() }) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface
+        val db = Firebase.firestore
+        val usersCollection = db.collection("users")
+
+        // Lấy thông tin người dùng hiện tại
+        LaunchedEffect(Unit) {
+            val currentUser = authRepository.getCurrentUser()
+            if (currentUser == null) {
+                Log.e(
+                    "ProfileScreen",
+                    "Người dùng chưa đăng nhập, điều hướng đến màn hình đăng nhập"
                 )
+                errorMessage = "Vui lòng đăng nhập để tiếp tục."
+                navController.navigate("signin") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                }
+                return@LaunchedEffect
             }
-            Text(
-                text = "Profile",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f).wrapContentWidth(Alignment.CenterHorizontally)
-            )
-            Spacer(modifier = Modifier.width(48.dp))
+
+            // Lấy thông tin từ Firestore
+            val userFromFirestore = authRepository.getUserFromFirestore(currentUser.uid)
+            if (userFromFirestore != null) {
+                user = userFromFirestore
+                fullName = userFromFirestore.fullName
+                email = userFromFirestore.email
+                mobileNumber = userFromFirestore.phoneNumber
+                gender = userFromFirestore.gender
+                address = userFromFirestore.address
+                isLoading = false
+                Log.d("ProfileScreen", "Lấy thông tin người dùng thành công: $fullName, $email")
+            } else {
+                // Nếu tài liệu không tồn tại, tạo mới với thông tin cơ bản
+                val userData = User(
+                    uid = currentUser.uid,
+                    email = currentUser.email,
+                    fullName = currentUser.fullName,
+                    role = currentUser.role
+                )
+                usersCollection.document(currentUser.uid).set(userData)
+                    .addOnSuccessListener {
+                        user = userData
+                        fullName = userData.fullName
+                        email = userData.email
+                        isLoading = false
+                        Log.d("ProfileScreen", "Tạo tài liệu người dùng mới thành công")
+                    }
+                    .addOnFailureListener { e ->
+                        errorMessage = "Không thể tạo hồ sơ: ${e.message}"
+                        isLoading = false
+                        Log.e("ProfileScreen", "Tạo tài liệu người dùng thất bại: ${e.message}")
+                    }
+            }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        // Đợi thông tin người dùng được tải
+        if (isLoading || user == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return
+        }
 
-        Box(
+        Column(
             modifier = Modifier
-                .size(100.dp),
-            contentAlignment = Alignment.Center
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Tiêu đề
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { navController.popBackStack() }) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Text(
+                    text = "Edit Profile",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).wrapContentWidth(Alignment.CenterHorizontally)
+                )
+                Spacer(modifier = Modifier.width(48.dp))
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Avatar
             Box(
                 modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
-                    .background(Color.LightGray),
+                    .size(100.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = "Profile Picture",
-                    modifier = Modifier.size(64.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(CircleShape)
+                        .background(Color.LightGray),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Profile Picture",
+                        modifier = Modifier.size(64.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { /* TODO: Chọn ảnh */ },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 8.dp, y = 8.dp)
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFFB800))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = "Edit Profile Picture",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
-            IconButton(
-                onClick = { /* TODO: Chọn ảnh */ },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 8.dp, y = 8.dp)
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFFFB800))
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Tên người dùng
+            Text(
+                text = fullName,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Email (chỉ đọc)
+            OutlinedTextField(
+                value = email,
+                onValueChange = {},
+                label = { Text("Email") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                enabled = false,
+                colors = OutlinedTextFieldDefaults.colors(
+                    disabledTextColor = Color.Black,
+                    disabledBorderColor = Color.Gray,
+                    disabledLabelColor = Color.Gray
+                )
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Số điện thoại
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit Profile Picture",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        var fullName by remember { mutableStateOf(TextFieldValue()) }
-        var mobileNumber by remember { mutableStateOf(TextFieldValue()) }
-        var email by remember { mutableStateOf(TextFieldValue()) }
-        var street by remember { mutableStateOf(TextFieldValue()) }
-        var city by remember { mutableStateOf(TextFieldValue()) }
-        var district by remember { mutableStateOf(TextFieldValue()) }
-
-        OutlinedTextField(
-            value = fullName,
-            onValueChange = { fullName = it },
-            label = { Text("Full Name") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = mobileNumber,
-            onValueChange = { mobileNumber = it },
-            label = { Text("Your mobile number") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            leadingIcon = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = 8.dp)
+                    modifier = Modifier.padding(end = 8.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .size(24.dp)
-                            .background(Color.Green)
+                            .background(Color.Green) // Thay bằng hình ảnh cờ Bangladesh
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("+880", style = MaterialTheme.typography.bodyMedium)
                 }
-            }
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = street,
-            onValueChange = { street = it },
-            label = { Text("Street") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = city,
-            onValueChange = { city = it },
-            label = { Text("City") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Dropdown",
-                    tint = MaterialTheme.colorScheme.onSurface
+                OutlinedTextField(
+                    value = mobileNumber,
+                    onValueChange = { mobileNumber = it },
+                    label = { Text("Your mobile number") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = !isUpdating
                 )
             }
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = district,
-            onValueChange = { district = it },
-            label = { Text("District") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Dropdown",
-                    tint = MaterialTheme.colorScheme.onSurface
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Giới tính (Dropdown)
+            var expanded by remember { mutableStateOf(false) }
+            val genderOptions = listOf("Male", "Female", "Other")
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            ) {
+                OutlinedTextField(
+                    value = gender,
+                    onValueChange = {},
+                    label = { Text("Gender") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = false,
+                    shape = RoundedCornerShape(8.dp),
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Dropdown",
+                            modifier = Modifier.clickable { expanded = true }
+                        )
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = Color.Black,
+                        disabledBorderColor = Color.Gray,
+                        disabledLabelColor = Color.Gray
+                    )
+                )
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    genderOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = {
+                                gender = option
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Địa chỉ
+            OutlinedTextField(
+                value = address,
+                onValueChange = { address = it },
+                label = { Text("Address") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                enabled = !isUpdating
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Nút Update
+            Button(
+                onClick = {
+                    coroutineScope.launch {
+                        isUpdating = true
+                        errorMessage = null
+                        val updatedData = mapOf(
+                            "fullName" to fullName,
+                            "phoneNumber" to mobileNumber,
+                            "gender" to gender,
+                            "address" to address
+                        )
+                        usersCollection.document(user!!.uid).update(updatedData)
+                            .addOnSuccessListener {
+                                Log.d("ProfileScreen", "Cập nhật hồ sơ thành công")
+                                isUpdating = false
+                                navController.popBackStack()
+                            }
+                            .addOnFailureListener { e ->
+                                Log.e("ProfileScreen", "Cập nhật hồ sơ thất bại: ${e.message}")
+                                errorMessage = "Cập nhật thất bại: ${e.message}"
+                                isUpdating = false
+                            }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
+                shape = RoundedCornerShape(8.dp),
+                enabled = !isUpdating
+            ) {
+                if (isUpdating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("UPDATE", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Hiển thị thông báo lỗi nếu có
+            errorMessage?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = it,
+                    color = Color.Red,
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
-        )
 
-        Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
-        Row(
+        // Thanh điều hướng dưới cùng
+        BottomControlBar(
+            navController = navController,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            OutlinedButton(
-                onClick = { navController?.popBackStack() },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Cancel")
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Button(
-                onClick = { navController?.popBackStack() }, // Quay lại sau khi lưu
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Save")
-            }
-        }
+                .align(Alignment.BottomCenter)
+        )
     }
 }
-
 @Preview(showBackground = true)
 @Composable
 fun ProfileScreenPreview() {
     MaterialTheme {
-        ProfileScreen(navController = rememberNavController())
+        ProfileScreen(
+            navController = rememberNavController(),
+            authRepository = AuthRepository()
+        )
     }
 }

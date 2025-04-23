@@ -1,5 +1,6 @@
 package com.example.dacs31.ui.screen
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ fun SignInScreen(
     var password by remember { mutableStateOf(TextFieldValue()) }
     var passwordVisible by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -68,7 +70,8 @@ fun SignInScreen(
             onValueChange = { emailOrPhone = it },
             label = { Text("Email or Phone Number") },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            enabled = !isLoading
         )
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
@@ -78,6 +81,7 @@ fun SignInScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(8.dp),
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            enabled = !isLoading,
             trailingIcon = {
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
@@ -107,24 +111,58 @@ fun SignInScreen(
         Button(
             onClick = {
                 coroutineScope.launch {
+                    isLoading = true
+                    errorMessage = null
                     val result = authRepository.login(emailOrPhone.text, password.text)
                     if (result.isSuccess) {
-                        val role = authRepository.getUserRole()
-                        if (role == "Driver") {
-                            navController.navigate("driver_home")
+                        val user = authRepository.getCurrentUser()
+                        if (user != null) {
+                            val role = user.role
+                            Log.d("SignInScreen", "Đăng nhập thành công, vai trò: $role")
+                            when (role) {
+                                "Driver" -> {
+                                    Log.d("SignInScreen", "Điều hướng đến driver_home")
+                                    navController.navigate("driver_home") {
+                                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                                    }
+                                }
+                                "Customer" -> {
+                                    Log.d("SignInScreen", "Điều hướng đến customer_home")
+                                    navController.navigate("customer_home") {
+                                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                                    }
+                                }
+                                else -> {
+                                    Log.e("SignInScreen", "Vai trò không hợp lệ: $role")
+                                    errorMessage = "Vai trò không hợp lệ. Vui lòng đăng nhập lại."
+                                    authRepository.signOut()
+                                }
+                            }
                         } else {
-                            navController.navigate("customer_home")
+                            Log.e("SignInScreen", "Không thể lấy thông tin người dùng")
+                            errorMessage = "Không thể lấy thông tin người dùng. Vui lòng thử lại."
                         }
                     } else {
-                        errorMessage = result.exceptionOrNull()?.message ?: "Login failed"
+                        Log.e("SignInScreen", "Đăng nhập thất bại: ${result.exceptionOrNull()?.message}")
+                        errorMessage = result.exceptionOrNull()?.message ?: "Đăng nhập thất bại"
                     }
+                    isLoading = false
                 }
             },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800)),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            enabled = !isLoading
         ) {
-            Text("Sign In", modifier = Modifier.padding(vertical = 8.dp))
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text("Sign In", modifier = Modifier.padding(vertical = 8.dp))
+            }
         }
 
         errorMessage?.let {

@@ -12,9 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.dacs31.R
@@ -36,33 +36,77 @@ fun DriverHomeScreen(
     authRepository: AuthRepository
 ) {
     val context = LocalContext.current
-    var userLocation by remember { mutableStateOf<Point?>(null) } // Vị trí tài xế
+    var driverId by remember { mutableStateOf<String?>(null) }
+    var userLocation by remember { mutableStateOf<Point?>(null) }
     var showPermissionDeniedDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isConnected by remember { mutableStateOf(false) }
-    var incomingRequest by remember { mutableStateOf<RideRequest?>(null) } // Lưu yêu cầu
-    var selectedRequest by remember { mutableStateOf<RideRequest?>(null) } // Yêu cầu đã chấp nhận
-    var fromPoint by remember { mutableStateOf<Point?>(null) } // Vị trí khách hàng
-    var toPoint by remember { mutableStateOf<Point?>(null) } // Đích đến
+    var incomingRequest by remember { mutableStateOf<RideRequest?>(null) }
+    var selectedRequest by remember { mutableStateOf<RideRequest?>(null) }
+    var fromPoint by remember { mutableStateOf<Point?>(null) }
+    var toPoint by remember { mutableStateOf<Point?>(null) }
     var routePoints by remember { mutableStateOf<List<Point>>(emptyList()) }
-
-    // Lấy UID của tài xế
-    val driverId = authRepository.getCurrentUser()?.uid
     val mapboxAccessToken = context.getString(R.string.mapbox_access_token)
     val coroutineScope = rememberCoroutineScope()
 
     // Firestore
     val db = Firebase.firestore
-    val driverRef = db.collection("drivers").document(driverId ?: "unknown_driver")
-    val requestsCollection = db.collection("requests")
 
-    // Đồng bộ trạng thái isConnected
-    LaunchedEffect(driverId) {
-        if (driverId == null) {
-            errorMessage = "Vui lòng đăng nhập để tiếp tục."
-            navController.navigate("signin")
+    // Thêm log khi màn hình được tải
+    Log.d("DriverHomeScreen", "Màn hình DriverHomeScreen được tải")
+
+    // Lấy driverId và kiểm tra vai trò
+    LaunchedEffect(Unit) {
+        val user = authRepository.getCurrentUser()
+        if (user == null || user.role != "Driver") {
+            Log.e("DriverHomeScreen", "Người dùng không phải tài xế, vai trò: ${user?.role}")
+            errorMessage = "Vui lòng đăng nhập với tài khoản tài xế."
+            navController.navigate("signin") {
+                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+            }
             return@LaunchedEffect
         }
+        driverId = user.uid
+        Log.d("DriverHomeScreen", "Driver ID: $driverId")
+    }
+
+    // Đợi driverId được gán trước khi tiếp tục
+    if (driverId == null) {
+        Log.d("DriverHomeScreen", "Đang chờ driverId, hiển thị loading")
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    val driverRef = db.collection("drivers").document(driverId!!)
+    val requestsCollection = db.collection("requests")
+
+    // Đồng bộ trạng thái isConnected và tạo tài liệu tài xế nếu chưa tồn tại
+    LaunchedEffect(driverId) {
+        driverRef.get()
+            .addOnSuccessListener { document ->
+                if (!document.exists()) {
+                    driverRef.set(
+                        mapOf(
+                            "location" to mapOf("latitude" to 0.0, "longitude" to 0.0),
+                            "isConnected" to false,
+                            "createdAt" to com.google.firebase.Timestamp.now()
+                        )
+                    )
+                        .addOnSuccessListener {
+                            Log.d("Firestore", "Tạo tài liệu tài xế mới thành công")
+                        }
+                        .addOnFailureListener { e ->
+                            Log.e("Firestore", "Tạo tài liệu tài xế thất bại: ${e.message}")
+                            errorMessage = "Tạo tài liệu tài xế thất bại: ${e.message}"
+                        }
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("Firestore", "Lỗi khi kiểm tra tài liệu: ${e.message}")
+                errorMessage = "Lỗi khi kiểm tra tài liệu: ${e.message}"
+            }
 
         driverRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
@@ -81,6 +125,9 @@ fun DriverHomeScreen(
     ) { isGranted ->
         if (!isGranted) {
             showPermissionDeniedDialog = true
+            Log.w("DriverHomeScreen", "Quyền vị trí bị từ chối")
+        } else {
+            Log.d("DriverHomeScreen", "Quyền vị trí được cấp")
         }
     }
 
@@ -118,7 +165,7 @@ fun DriverHomeScreen(
 
     // Cập nhật vị trí tài xế vào Firestore
     LaunchedEffect(userLocation) {
-        if (driverId != null && userLocation != null) {
+        if (userLocation != null) {
             val locationData = mapOf(
                 "location" to mapOf(
                     "latitude" to userLocation!!.latitude(),
@@ -133,6 +180,8 @@ fun DriverHomeScreen(
                 .addOnFailureListener { e ->
                     Log.e("Firestore", "Cập nhật vị trí thất bại: ${e.message}")
                 }
+        } else {
+            Log.w("DriverHomeScreen", "userLocation là null, không thể cập nhật vị trí")
         }
     }
 
@@ -143,15 +192,17 @@ fun DriverHomeScreen(
         requestListener?.remove()
         requestListener = null
 
-        if (driverId == null || !isConnected) {
+        if (!isConnected) {
             incomingRequest = null
             selectedRequest = null
             fromPoint = null
             toPoint = null
             routePoints = emptyList()
+            Log.d("DriverHomeScreen", "Tài xế không kết nối, không lắng nghe yêu cầu")
             return@LaunchedEffect
         }
 
+        Log.d("DriverHomeScreen", "Tài xế kết nối, bắt đầu lắng nghe yêu cầu")
         requestListener = requestsCollection
             .whereEqualTo("status", "pending")
             .addSnapshotListener { snapshot, error ->
@@ -185,43 +236,184 @@ fun DriverHomeScreen(
                         )
                     }
 
-                    // Chỉ hiển thị dialog nếu chưa có yêu cầu nào được chấp nhận
                     if (selectedRequest == null) {
                         incomingRequest = requestList.firstOrNull()
+                        Log.d("DriverHomeScreen", "Yêu cầu mới: $incomingRequest")
                     }
                 }
             }
     }
 
     // Hiển thị dialog khi có yêu cầu đặt xe
+    // Hiển thị dialog khi có yêu cầu đặt xe
     if (incomingRequest != null && selectedRequest == null) {
+        val currentRequest = incomingRequest // Lưu trữ incomingRequest vào biến cục bộ
         AlertDialog(
             onDismissRequest = { incomingRequest = null },
             title = { Text("Yêu cầu đặt xe mới") },
-            text = { Text("Bạn có một yêu cầu đặt xe mới từ khách hàng ${incomingRequest!!.customerId}. Chấp nhận không?") },
+            text = { Text("Bạn có một yêu cầu đặt xe mới từ khách hàng ${currentRequest!!.customerId}. Chấp nhận không?") },
             confirmButton = {
                 TextButton(onClick = {
-                    if (driverId == null) {
-                        errorMessage = "Vui lòng đăng nhập để tiếp tục."
-                        navController.navigate("signin")
-                        return@TextButton
-                    }
+                    // Tạm thời tắt snapshot listener để tránh cập nhật không mong muốn
+                    requestListener?.remove()
+                    // Kiểm tra trạng thái yêu cầu trước khi chấp nhận
+                    requestsCollection.document(currentRequest!!.id).get()
+                        .addOnSuccessListener { document ->
+                            if (document.exists()) {
+                                val status = document.getString("status")
+                                val currentDriverId = document.getString("driverId")
+                                if (status == "pending" && currentDriverId == null) {
+                                    requestsCollection.document(currentRequest.id)
+                                        .update(
+                                            mapOf(
+                                                "status" to "accepted",
+                                                "driverId" to driverId
+                                            )
+                                        )
+                                        .addOnSuccessListener {
+                                            selectedRequest = currentRequest
+                                            incomingRequest = null
+                                            Log.d("Firestore", "Chấp nhận yêu cầu thành công: ${selectedRequest!!.id}")
+                                            // Khởi động lại snapshot listener
+                                            requestListener = requestsCollection
+                                                .whereEqualTo("status", "pending")
+                                                .addSnapshotListener { snapshot, error ->
+                                                    if (error != null) {
+                                                        Log.e("Firestore", "Lỗi khi lắng nghe yêu cầu: ${error.message}")
+                                                        errorMessage = "Không thể tải yêu cầu: ${error.message}"
+                                                        return@addSnapshotListener
+                                                    }
 
-                    requestsCollection.document(incomingRequest!!.id)
-                        .update(
-                            mapOf(
-                                "status" to "accepted",
-                                "driverId" to driverId
-                            )
-                        )
-                        .addOnSuccessListener {
-                            selectedRequest = incomingRequest
-                            incomingRequest = null
-                            Log.d("Firestore", "Chấp nhận yêu cầu thành công: ${selectedRequest!!.id}")
+                                                    if (snapshot != null) {
+                                                        val requestList = snapshot.documents.mapNotNull { doc ->
+                                                            val pickupData = doc.get("pickupLocation") as? Map<String, Double>
+                                                            val destData = doc.get("destination") as? Map<String, Double>
+                                                            val customerId = doc.getString("customerId") ?: return@mapNotNull null
+                                                            val status = doc.getString("status") ?: return@mapNotNull null
+
+                                                            val pickupLocation = pickupData?.let {
+                                                                Point.fromLngLat(it["longitude"] ?: 0.0, it["latitude"] ?: 0.0)
+                                                            } ?: return@mapNotNull null
+
+                                                            val destination = destData?.let {
+                                                                Point.fromLngLat(it["longitude"] ?: 0.0, it["latitude"] ?: 0.0)
+                                                            } ?: return@mapNotNull null
+
+                                                            RideRequest(
+                                                                id = doc.id,
+                                                                customerId = customerId,
+                                                                pickupLocation = pickupLocation,
+                                                                destination = destination,
+                                                                status = status
+                                                            )
+                                                        }
+
+                                                        if (selectedRequest == null) {
+                                                            incomingRequest = requestList.firstOrNull()
+                                                            Log.d("DriverHomeScreen", "Yêu cầu mới: $incomingRequest")
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            Log.e("Firestore", "Chấp nhận yêu cầu thất bại: ${e.message}")
+                                            errorMessage = "Không thể chấp nhận yêu cầu: ${e.message}"
+                                            // Khởi động lại snapshot listener ngay cả khi thất bại
+                                            requestListener = requestsCollection
+                                                .whereEqualTo("status", "pending")
+                                                .addSnapshotListener { snapshot, error ->
+                                                    if (error != null) {
+                                                        Log.e("Firestore", "Lỗi khi lắng nghe yêu cầu: ${error.message}")
+                                                        errorMessage = "Không thể tải yêu cầu: ${error.message}"
+                                                        return@addSnapshotListener
+                                                    }
+
+                                                    if (snapshot != null) {
+                                                        val requestList = snapshot.documents.mapNotNull { doc ->
+                                                            val pickupData = doc.get("pickupLocation") as? Map<String, Double>
+                                                            val destData = doc.get("destination") as? Map<String, Double>
+                                                            val customerId = doc.getString("customerId") ?: return@mapNotNull null
+                                                            val status = doc.getString("status") ?: return@mapNotNull null
+
+                                                            val pickupLocation = pickupData?.let {
+                                                                Point.fromLngLat(it["longitude"] ?: 0.0, it["latitude"] ?: 0.0)
+                                                            } ?: return@mapNotNull null
+
+                                                            val destination = destData?.let {
+                                                                Point.fromLngLat(it["longitude"] ?: 0.0, it["latitude"] ?: 0.0)
+                                                            } ?: return@mapNotNull null
+
+                                                            RideRequest(
+                                                                id = doc.id,
+                                                                customerId = customerId,
+                                                                pickupLocation = pickupLocation,
+                                                                destination = destination,
+                                                                status = status
+                                                            )
+                                                        }
+
+                                                        if (selectedRequest == null) {
+                                                            incomingRequest = requestList.firstOrNull()
+                                                            Log.d("DriverHomeScreen", "Yêu cầu mới: $incomingRequest")
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                } else {
+                                    Log.w("Firestore", "Yêu cầu không còn ở trạng thái pending hoặc đã có tài xế")
+                                    errorMessage = "Yêu cầu đã được xử lý bởi tài xế khác."
+                                    incomingRequest = null
+                                }
+                            } else {
+                                Log.w("Firestore", "Yêu cầu không tồn tại")
+                                errorMessage = "Yêu cầu không tồn tại."
+                                incomingRequest = null
+                            }
                         }
                         .addOnFailureListener { e ->
-                            Log.e("Firestore", "Chấp nhận yêu cầu thất bại: ${e.message}")
-                            errorMessage = "Không thể chấp nhận yêu cầu: ${e.message}"
+                            Log.e("Firestore", "Lỗi khi kiểm tra yêu cầu: ${e.message}")
+                            errorMessage = "Lỗi khi kiểm tra yêu cầu: ${e.message}"
+                            incomingRequest = null
+                            // Khởi động lại snapshot listener ngay cả khi thất bại
+                            requestListener = requestsCollection
+                                .whereEqualTo("status", "pending")
+                                .addSnapshotListener { snapshot, error ->
+                                    if (error != null) {
+                                        Log.e("Firestore", "Lỗi khi lắng nghe yêu cầu: ${error.message}")
+                                        errorMessage = "Không thể tải yêu cầu: ${error.message}"
+                                        return@addSnapshotListener
+                                    }
+
+                                    if (snapshot != null) {
+                                        val requestList = snapshot.documents.mapNotNull { doc ->
+                                            val pickupData = doc.get("pickupLocation") as? Map<String, Double>
+                                            val destData = doc.get("destination") as? Map<String, Double>
+                                            val customerId = doc.getString("customerId") ?: return@mapNotNull null
+                                            val status = doc.getString("status") ?: return@mapNotNull null
+
+                                            val pickupLocation = pickupData?.let {
+                                                Point.fromLngLat(it["longitude"] ?: 0.0, it["latitude"] ?: 0.0)
+                                            } ?: return@mapNotNull null
+
+                                            val destination = destData?.let {
+                                                Point.fromLngLat(it["longitude"] ?: 0.0, it["latitude"] ?: 0.0)
+                                            } ?: return@mapNotNull null
+
+                                            RideRequest(
+                                                id = doc.id,
+                                                customerId = customerId,
+                                                pickupLocation = pickupLocation,
+                                                destination = destination,
+                                                status = status
+                                            )
+                                        }
+
+                                        if (selectedRequest == null) {
+                                            incomingRequest = requestList.firstOrNull()
+                                            Log.d("DriverHomeScreen", "Yêu cầu mới: $incomingRequest")
+                                        }
+                                    }
+                                }
                         }
                 }) {
                     Text("Chấp nhận")
@@ -263,10 +455,8 @@ fun DriverHomeScreen(
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Lưu instance của MapView để điều chỉnh camera
         var mapViewInstance by remember { mutableStateOf<MapView?>(null) }
 
-        // Bản đồ Mapbox làm nền
         MapComponent(
             modifier = Modifier.fillMaxSize(),
             routePoints = routePoints,
@@ -282,23 +472,24 @@ fun DriverHomeScreen(
             },
             onMapViewReady = { mapView ->
                 mapViewInstance = mapView
+                Log.d("DriverHomeScreen", "MapView sẵn sàng")
             }
         )
 
-        // Tự động di chuyển camera đến vị trí người dùng khi có userLocation
         LaunchedEffect(userLocation) {
-            userLocation?.let { point ->
+            if (userLocation != null) {
                 mapViewInstance?.getMapboxMap()?.setCamera(
                     CameraOptions.Builder()
-                        .center(point)
+                        .center(userLocation)
                         .zoom(15.0)
                         .build()
                 )
-                Log.d("DriverHomeScreen", "Camera moved to user location: $point")
+                Log.d("DriverHomeScreen", "Camera moved to user location: $userLocation")
+            } else {
+                Log.w("DriverHomeScreen", "userLocation là null, không thể di chuyển camera")
             }
         }
 
-        // Thanh điều khiển phía trên
         TopControlBar(
             modifier = Modifier
                 .fillMaxWidth()
@@ -308,7 +499,45 @@ fun DriverHomeScreen(
             authRepository = authRepository
         )
 
-        // Thanh điều khiển phía dưới
+        // Thêm thông báo trạng thái khi không có yêu cầu
+        if (!isConnected && selectedRequest == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                    .align(Alignment.Center),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Bạn hiện đang offline. Kết nối để nhận yêu cầu đặt xe.",
+                    style = TextStyle(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        } else if (isConnected && incomingRequest == null && selectedRequest == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                    .align(Alignment.Center),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Đang chờ yêu cầu đặt xe...",
+                    style = TextStyle(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -316,7 +545,6 @@ fun DriverHomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (selectedRequest != null) {
-                // Hiển thị thông tin chuyến đi đã chấp nhận
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -396,13 +624,38 @@ fun DriverHomeScreen(
                 isConnected = isConnected,
                 onConnectClick = {
                     isConnected = !isConnected
-                    driverRef.update("isConnected", isConnected)
-                        .addOnSuccessListener {
-                            Log.d("Firestore", "Cập nhật trạng thái isConnected thành công: $isConnected")
+                    val driverDocRef = db.collection("drivers").document(driverId!!)
+                    driverDocRef.get()
+                        .addOnSuccessListener { document ->
+                            if (document.exists()) {
+                                driverDocRef.update("isConnected", isConnected)
+                                    .addOnSuccessListener {
+                                        Log.d("Firestore", "Cập nhật trạng thái isConnected thành công: $isConnected")
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Log.e("Firestore", "Cập nhật trạng thái thất bại: ${e.message}")
+                                        errorMessage = "Cập nhật trạng thái thất bại: ${e.message}"
+                                    }
+                            } else {
+                                driverDocRef.set(
+                                    mapOf(
+                                        "location" to mapOf("latitude" to 0.0, "longitude" to 0.0),
+                                        "isConnected" to isConnected,
+                                        "createdAt" to com.google.firebase.Timestamp.now()
+                                    )
+                                )
+                                    .addOnSuccessListener {
+                                        Log.d("Firestore", "Tạo tài liệu tài xế thành công")
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Log.e("Firestore", "Tạo tài liệu tài xế thất bại: ${e.message}")
+                                        errorMessage = "Tạo tài liệu tài xế thất bại: ${e.message}"
+                                    }
+                            }
                         }
                         .addOnFailureListener { e ->
-                            Log.e("Firestore", "Cập nhật trạng thái thất bại: ${e.message}")
-                            errorMessage = "Cập nhật trạng thái thất bại: ${e.message}"
+                            Log.e("Firestore", "Lỗi khi kiểm tra tài liệu: ${e.message}")
+                            errorMessage = "Lỗi khi kiểm tra tài liệu: ${e.message}"
                         }
                 }
             )
@@ -416,7 +669,6 @@ fun DriverHomeScreen(
     }
 }
 
-// Data class để lưu thông tin yêu cầu
 data class RideRequest(
     val id: String,
     val customerId: String,

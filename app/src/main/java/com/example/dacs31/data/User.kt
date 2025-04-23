@@ -4,6 +4,9 @@ data class User(
     val uid: String = "",
     val email: String = "",
     val fullName: String = "",
-    val role: String = "Customer", // Thêm role, mặc định là Customer
+    val phoneNumber: String = "",
+    val gender: String = "",
+    val address: String = "",
+    val role: String = "Customer", // Mặc định là Customer
     val createdAt: Long = System.currentTimeMillis()
 )
