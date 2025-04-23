@@ -30,29 +30,31 @@ fun HistoryScreen(
     navController: NavController,
     authRepository: AuthRepository
 ) {
-    var driverId by remember { mutableStateOf<String?>(null) }
+    var userId by remember { mutableStateOf<String?>(null) }
+    var role by remember { mutableStateOf<String?>(null) }
     var trips by remember { mutableStateOf<List<Trip>>(emptyList()) }
     var selectedTab by remember { mutableStateOf("Upcoming") }
     val tripRepository = remember { TripRepository() }
 
-    // Lấy driverId
+    // Lấy userId và role
     LaunchedEffect(Unit) {
         val user = authRepository.getCurrentUser()
         Log.d("HistoryScreen", "Current user: $user")
-        if (user == null || user.role != "Driver") {
+        if (user == null) {
             navController.navigate("signin") {
                 popUpTo(navController.graph.startDestinationId) { inclusive = true }
             }
             return@LaunchedEffect
         }
-        driverId = user.uid
-        Log.d("HistoryScreen", "Driver ID: $driverId")
+        userId = user.uid
+        role = user.role
+        Log.d("HistoryScreen", "User ID: $userId, Role: $role")
     }
 
     // Lấy dữ liệu chuyến đi
-    LaunchedEffect(driverId, selectedTab) {
-        driverId?.let { id ->
-            val allTrips = tripRepository.getTripsByDriver(id)
+    LaunchedEffect(userId, role, selectedTab) {
+        if (userId != null && role != null) {
+            val allTrips = tripRepository.getTripsByUser(userId!!, role!!)
             Log.d("HistoryScreen", "All trips: $allTrips")
             trips = when (selectedTab) {
                 "Upcoming" -> allTrips.filter { it.status in listOf("pending", "accepted") }
@@ -64,8 +66,8 @@ fun HistoryScreen(
         }
     }
 
-    // Đợi driverId
-    if (driverId == null) {
+    // Đợi userId và role
+    if (userId == null || role == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
@@ -198,7 +200,7 @@ fun TripItem(trip: Trip) {
                 .padding(16.dp)
         ) {
             Text(
-                text = "Khách hàng: ${trip.customerId}",
+                text = "Khách hàng: ${trip.customerName}",
                 style = TextStyle(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold

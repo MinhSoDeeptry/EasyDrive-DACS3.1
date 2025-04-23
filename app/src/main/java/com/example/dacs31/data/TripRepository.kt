@@ -10,19 +10,28 @@ class TripRepository {
     private val db = Firebase.firestore
     private val requestsCollection = db.collection("requests")
 
-    suspend fun getTripsByDriver(driverId: String): List<Trip> {
-        Log.d("TripRepository", "Fetching trips for driverId: $driverId")
+    suspend fun getTripsByUser(userId: String, role: String): List<Trip> {
+        Log.d("TripRepository", "Fetching trips for userId: $userId, role: $role")
         return try {
-            val snapshot = requestsCollection
-                .whereEqualTo("driverId", driverId)
-                .get()
-                .await()
+            // Lọc dữ liệu dựa trên vai trò
+            val snapshot = if (role == "Driver") {
+                requestsCollection
+                    .whereEqualTo("driverId", userId)
+                    .get()
+                    .await()
+            } else { // role == "Customer"
+                requestsCollection
+                    .whereEqualTo("customerId", userId)
+                    .get()
+                    .await()
+            }
 
             Log.d("TripRepository", "Found ${snapshot.documents.size} trips")
 
             val trips = mutableListOf<Trip>()
             for (doc in snapshot.documents) {
                 val customerId = doc.getString("customerId") ?: continue
+                val customerName = doc.getString("customerName") ?: "Unknown"
                 val status = doc.getString("status") ?: continue
                 val pickupData = doc.get("pickupLocation") as? Map<String, Double>
                 val destData = doc.get("destination") as? Map<String, Double>
@@ -39,6 +48,7 @@ class TripRepository {
                     Trip(
                         id = doc.id,
                         customerId = customerId,
+                        customerName = customerName,
                         pickupLocation = pickupLocation,
                         destination = destination,
                         time = doc.getTimestamp("createdAt"),
